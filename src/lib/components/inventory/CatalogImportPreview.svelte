@@ -12,13 +12,14 @@
 	>
 		<h3 class="font-semibold">Vista previa: {app.importFile}</h3>
 		<p class="text-sm text-zinc-500">
-			Primera hoja, encabezados en la primera fila. Asigna columnas únicas. Los errores y duplicados
-			se omiten; no se generan claves ni existencias faltantes.
+			Primera hoja, encabezados en la primera fila. Revisa las columnas detectadas o asígnalas
+			manualmente. Asigna columnas únicas. Los errores y duplicados se omiten; no se generan claves
+			ni existencias faltantes.
 		</p>
 		<div class="grid gap-3 sm:grid-cols-2">
 			{#each importFields as field (field.id)}<label class="text-sm"
 					>{field.label}<select
-						value={app.mapping[field.id]}
+						value={app.mapping[field.id] ?? ''}
 						onchange={(event) => app.setMappingColumn(field.id, event.currentTarget.value)}
 						class="mt-1 min-h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 dark:border-zinc-700 dark:bg-zinc-900"
 						><option value="">Sin asignar</option
@@ -34,6 +35,8 @@
 				class="mt-1 min-h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 dark:border-zinc-700 dark:bg-zinc-900"
 				><option value="append" disabled={app.hasDemo}
 					>Agregar solo claves nuevas (conservar conteos)</option
+				><option value="update" disabled={app.hasDemo}
+					>Actualizar catálogo conservando conteos</option
 				><option value="replace">Reemplazar catálogo y conteos (con confirmación)</option></select
 			></label
 		>
@@ -44,9 +47,23 @@
 		{#if !app.preview.mappingValid}<p class="text-sm text-red-600">
 				Asigna Clave, Descripción y Existencia SICAR a columnas diferentes.
 			</p>{/if}
+		{#if app.session.status === 'active' || app.session.status === 'paused'}<p
+				role="note"
+				class="text-sm text-red-600"
+			>
+				Hay una sesión abierta. Confirma cómo se aplicará el catálogo antes de importar.
+			</p>{/if}
+		{#if app.importMode === 'update'}<p class="text-sm text-zinc-500">
+				Se actualizan descripción y existencia SICAR por clave; se conservan cantidades, fechas y
+				productos ausentes del archivo. Los campos opcionales sin asignar conservan sus datos
+				actuales. Las diferencias se recalculan con la nueva existencia.
+			</p>{/if}
 		<p class="text-sm" data-testid="import-summary">
 			{app.preview.products.length} válidos · {app.preview.duplicates.length} duplicados · {app
 				.preview.errors.length} errores
+		</p>
+		<p class="text-sm text-zinc-500">
+			{app.preview.additions} nuevos · {app.preview.updates} actualizaciones
 		</p>
 		{#if app.preview.products.length}<div class="overflow-x-auto">
 				<table class="w-full text-left text-sm">
@@ -56,13 +73,16 @@
 						><tr
 							><th class="p-2">Clave</th><th class="p-2">Clave alterna</th><th class="p-2"
 								>Descripción</th
-							><th class="p-2">Existencia SICAR</th></tr
+							><th class="p-2">Existencia actual</th><th class="p-2">Categoría / Departamento</th
+							><th class="p-2">Unidad de medida</th></tr
 						></thead
 					><tbody
 						>{#each app.preview.products.slice(0, 5) as product (product.id)}<tr
 								class="border-t border-zinc-200 dark:border-zinc-800"
 								><td class="p-2">{product.key}</td><td class="p-2">{product.alternateKey || '—'}</td
-								><td class="p-2">{product.name}</td><td class="p-2">{product.expected}</td></tr
+								><td class="p-2">{product.name}</td><td class="p-2">{product.expected}</td><td
+									class="p-2">{product.category || '—'}</td
+								><td class="p-2">{product.unit || '—'}</td></tr
 							>{/each}</tbody
 					>
 				</table>

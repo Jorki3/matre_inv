@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import App from '../routes/+page.svelte';
+import * as XLSX from 'xlsx';
 import { db, loadInventoryState, loadLatestBackup, saveInventoryState } from './database';
 import {
 	applyPhysicalCount,
@@ -382,5 +383,147 @@ describe('safe session administration and JSON restore', () => {
 		expect(restored.catalog).toMatchObject(backup.catalog);
 		expect(restored.catalog.filter((product) => product.countedAt)).toHaveLength(500);
 		expect(restored.movements).toEqual(movements);
+	});
+});
+
+describe('SICAR catalog updates in IndexedDB', () => {
+	it('previews Excel fields, asks for consent and preserves counts and session after an update and reload', async () => {
+		const original = {
+			id: 'real-1',
+			key: '00001',
+			alternateKey: 'ALT-OLD',
+			name: 'Artículo anterior',
+			expected: 20,
+			physical: 0,
+			createdAt: '2026-01-01T00:00:00Z',
+			source: 'importado'
+		};
+		const missing = {
+			...original,
+			id: 'real-2',
+			key: '00002',
+			name: 'Conservar aunque no venga en archivo'
+		};
+		const counted = transitionSession(
+			countInSession(
+				transitionSession({ ...createSession(), products: [original, missing] }, 'active'),
+				original.id,
+				0
+			),
+			'paused'
+		);
+		await saveInventoryState({
+			id: 'main',
+			session: counted,
+			catalog: counted.products,
+			theme: 'light',
+			lastSavedAt: new Date().toISOString()
+		});
+		render(App);
+		await page.getByRole('button', { name: 'Inventario', exact: true }).click();
+		await expect.element(page.getByTestId('session-status')).toHaveTextContent('Pausado');
+		await page.getByRole('button', { name: 'Productos', exact: true }).click();
+		const book = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(
+			book,
+			XLSX.utils.aoa_to_sheet([
+				[
+					'Clave',
+					'Clave alterna',
+					'Producto',
+					'Existencia actual',
+					'Departamento',
+					'Unidad de medida'
+				],
+				['00001', 'ALT-NEW', 'Actualizado', 0, 'Herramientas', 'Pieza'],
+				['00003', 'ALT-3', 'Nuevo', 7, 'Herramientas', 'Caja']
+			]),
+			'Catálogo'
+		);
+		const transfer = new DataTransfer();
+		transfer.items.add(
+			new File([XLSX.write(book, { type: 'array', bookType: 'xlsx' })], 'sicar.xlsx')
+		);
+		const input = document.querySelector<HTMLInputElement>(
+			'input[aria-label="Importar catálogo"]'
+		)!;
+		input.files = transfer.files;
+		input.dispatchEvent(new Event('change', { bubbles: true }));
+		await expect
+			.element(page.getByTestId('import-summary'))
+			.toHaveTextContent('1 válidos · 1 duplicados');
+		await page.getByRole('combobox', { name: 'Destino del catálogo' }).selectOptions('update');
+		await expect
+			.element(page.getByTestId('import-summary'))
+			.toHaveTextContent('2 válidos · 0 duplicados');
+		const consent = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		try {
+			await page.getByRole('button', { name: 'Confirmar importación', exact: true }).click();
+			expect((await loadInventoryState()).catalog[0].name).toBe(original.name);
+			consent.mockReturnValue(true);
+			await page.getByRole('button', { name: 'Confirmar importación', exact: true }).click();
+			await expect
+				.element(page.getByRole('status'))
+				.toHaveTextContent('1 productos nuevos y 1 actualizados. Conteos conservados.');
+		} finally {
+			consent.mockRestore();
+		}
+		db.close();
+		await db.open();
+		const saved = await loadInventoryState();
+		expect(saved.session.id).toBe(counted.id);
+		expect(saved.session.status).toBe('paused');
+		expect(saved.catalog).toHaveLength(3);
+		expect(saved.catalog[0]).toMatchObject({
+			id: original.id,
+			key: '00001',
+			alternateKey: 'ALT-NEW',
+			name: 'Actualizado',
+			expected: 0,
+			physical: 0,
+			countedAt: counted.products[0].countedAt,
+			category: 'Herramientas',
+			unit: 'Pieza'
+		});
+		expect(saved.catalog[1].key).toBe('00002');
+		expect((await loadLatestBackup())?.catalog[0].name).toBe(original.name);
+	});
+
+	it('requires replacement of a demonstration catalog and does not silently append real products', async () => {
+		const demo = createSeedCatalog();
+		await saveInventoryState({
+			id: 'main',
+			session: { ...createSession(), products: demo },
+			catalog: demo,
+			theme: 'light',
+			lastSavedAt: new Date().toISOString()
+		});
+		render(App);
+		await page.getByRole('button', { name: 'Inventario', exact: true }).click();
+		await expect.element(page.getByRole('button', { name: 'Comenzar', exact: true })).toBeEnabled();
+		await page.getByRole('button', { name: 'Productos', exact: true }).click();
+		const transfer = new DataTransfer();
+		transfer.items.add(new File(['Clave,Producto,Existencia actual\n00001,Real,0'], 'real.csv'));
+		const input = document.querySelector<HTMLInputElement>(
+			'input[aria-label="Importar catálogo"]'
+		)!;
+		input.files = transfer.files;
+		input.dispatchEvent(new Event('change', { bubbles: true }));
+		await expect.element(page.getByTestId('import-summary')).toHaveTextContent('1 válidos');
+		await expect
+			.element(page.getByRole('combobox', { name: 'Destino del catálogo' }))
+			.toHaveValue('replace');
+		const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		try {
+			await page.getByRole('button', { name: 'Confirmar importación', exact: true }).click();
+			expect((await loadInventoryState()).catalog).toHaveLength(12);
+			confirmation.mockReturnValue(true);
+			await page.getByRole('button', { name: 'Confirmar importación', exact: true }).click();
+			await expect.element(page.getByRole('status')).toHaveTextContent('1 productos importados');
+		} finally {
+			confirmation.mockRestore();
+		}
+		expect((await loadInventoryState()).catalog.map((product) => product.key)).toEqual(['00001']);
+		expect((await loadLatestBackup())?.catalog).toHaveLength(12);
 	});
 });

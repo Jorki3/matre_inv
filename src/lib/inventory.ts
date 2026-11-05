@@ -8,6 +8,8 @@ export interface Product {
 	name: string;
 	key: string;
 	alternateKey?: string;
+	category?: string;
+	unit?: string;
 	/** Legacy identifier, retained when migrating old catalogs. */
 	barcode?: string;
 	expected: number;
