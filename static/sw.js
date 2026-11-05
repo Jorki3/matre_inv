@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matre-inventario-v1';
+const CACHE_NAME = 'matre-inventario-v2';
 const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, '');
 const APP_ROOT = `${BASE_PATH}/`;
 const PRECACHE = [APP_ROOT, `${BASE_PATH}/manifest.webmanifest`, `${BASE_PATH}/favicon.svg`];
@@ -12,7 +12,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
 	event.waitUntil(
 		caches.keys().then((keys) =>
-			Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+			Promise.all(keys.filter((key) => key.startsWith('matre-inventario-') && key !== CACHE_NAME).map((key) => caches.delete(key)))
 		)
 			.then(() => self.clients.claim())
 	);

@@ -1,5 +1,13 @@
 import Dexie, { type Table } from 'dexie';
-import type { InventorySession, InventorySnapshot, Product, ThemeMode } from './inventory';
+import {
+	createSession,
+	createInventoryExport,
+	migrateInventory,
+	type InventorySession,
+	type InventorySnapshot,
+	type Product,
+	type ThemeMode
+} from './inventory';
 
 export interface StoredInventoryState {
 	id: string;
@@ -37,53 +45,42 @@ function copySession(session: InventorySession): InventorySession {
 }
 
 export async function loadInventoryState(): Promise<StoredInventoryState> {
-	if (typeof window === 'undefined') {
-		return {
-			id: 'main',
-			session: {
-				id: 'demo-session',
-				name: 'Inventario MATRE',
-				startedAt: new Date().toISOString(),
-				status: 'active',
-				products: []
-			},
-			catalog: [],
-			lastSavedAt: new Date().toISOString(),
-			theme: 'system'
-		};
+	if (typeof window !== 'undefined') {
+		const existing = await db.state.get('main');
+		if (existing) return { ...existing, ...migrateInventory(existing.session, existing.catalog) };
 	}
-
-	const existing = await db.state.get('main');
-	if (existing) {
-		return existing;
-	}
-
 	const fallback: StoredInventoryState = {
 		id: 'main',
-		session: {
-			id: 'demo-session',
-			name: 'Inventario MATRE',
-			startedAt: new Date().toISOString(),
-			status: 'active',
-			products: []
-		},
+		session: createSession(),
 		catalog: [],
 		lastSavedAt: new Date().toISOString(),
 		theme: 'system'
 	};
-
-	await db.state.put(fallback);
+	if (typeof window !== 'undefined') await db.state.put(fallback);
 	return fallback;
 }
 
-export async function saveInventoryState(payload: StoredInventoryState): Promise<void> {
+export async function saveInventoryState(
+	payload: StoredInventoryState,
+	archiveCurrent = false
+): Promise<void> {
 	if (typeof window === 'undefined') return;
-	await db.state.put({
-		...payload,
-		id: payload.id ?? 'main',
-		session: copySession(payload.session),
-		catalog: payload.catalog.map(copyProduct),
-		lastSavedAt: new Date().toISOString()
+	await db.transaction('rw', db.state, db.backups, async () => {
+		if (archiveCurrent) {
+			const previous = await db.state.get('main');
+			if (previous)
+				await db.backups.put({
+					...createInventoryExport(previous.catalog, previous.session),
+					session: previous.session
+				});
+		}
+		await db.state.put({
+			...payload,
+			id: payload.id ?? 'main',
+			session: copySession(payload.session),
+			catalog: payload.catalog.map(copyProduct),
+			lastSavedAt: new Date().toISOString()
+		});
 	});
 }
 
@@ -105,7 +102,12 @@ export async function loadLatestBackup(): Promise<InventorySnapshot | undefined>
 export function applyTheme(theme: ThemeMode): void {
 	if (typeof document === 'undefined') return;
 	const root = document.documentElement;
-	root.dataset.theme = theme === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
+	root.dataset.theme =
+		theme === 'system'
+			? window.matchMedia('(prefers-color-scheme: dark)').matches
+				? 'dark'
+				: 'light'
+			: theme;
 }
 
 export function persistTheme(theme: ThemeMode): void {
