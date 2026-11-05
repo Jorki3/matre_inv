@@ -3,7 +3,14 @@ import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import App from '../routes/+page.svelte';
 import { db, loadInventoryState, loadLatestBackup, saveInventoryState } from './database';
-import { countInSession, createSeedCatalog, createSession, transitionSession } from './inventory';
+import {
+	applyPhysicalCount,
+	countInSession,
+	createInventoryExport,
+	createSeedCatalog,
+	createSession,
+	transitionSession
+} from './inventory';
 
 beforeEach(async () => {
 	await db.state.clear();
@@ -178,5 +185,202 @@ describe('IndexedDB and mobile counting', () => {
 		await expect.element(page.getByRole('spinbutton', { name: 'Cantidad física' })).toBeDisabled();
 		expect((await loadInventoryState()).session.finishedAt).toBeTruthy();
 		confirmation.mockRestore();
+	});
+});
+
+async function mountCounted(status: 'paused' | 'completed') {
+	const catalog = createSeedCatalog().slice(0, 2);
+	const session = transitionSession(
+		countInSession(
+			transitionSession({ ...createSession(), products: catalog }, 'active'),
+			catalog[0].id,
+			0
+		),
+		status
+	);
+	await saveInventoryState({
+		id: 'main',
+		session,
+		catalog: session.products,
+		theme: 'light',
+		lastSavedAt: new Date().toISOString()
+	});
+	render(App);
+	await page.getByRole('button', { name: 'Inventario', exact: true }).click();
+	await expect
+		.element(page.getByTestId('session-status'))
+		.toHaveTextContent(status === 'completed' ? 'Finalizado' : 'Pausado');
+	return session;
+}
+
+function uploadBackup(value: unknown) {
+	const input = document.querySelector<HTMLInputElement>(
+		'input[aria-label="Importar respaldo JSON"]'
+	)!;
+	const transfer = new DataTransfer();
+	transfer.items.add(
+		new File([JSON.stringify(value)], 'MATRE_Inventario.json', { type: 'application/json' })
+	);
+	input.files = transfer.files;
+	input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+describe('safe session administration and JSON restore', () => {
+	it('requires confirmation to create a new session and retains the completed inventory in history', async () => {
+		const previous = await mountCounted('completed');
+		await page.getByRole('button', { name: 'Nuevo inventario', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await expect
+			.element(dialog.getByRole('button', { name: 'Crear nuevo inventario', exact: true }))
+			.toBeDisabled();
+		await expect
+			.element(dialog.getByRole('button', { name: 'Descargar respaldo actual JSON' }))
+			.toBeVisible();
+		await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+		expect((await loadInventoryState()).session.id).toBe(previous.id);
+		await page.getByRole('button', { name: 'Nuevo inventario', exact: true }).click();
+		await dialog.getByRole('checkbox').click();
+		await dialog.getByRole('button', { name: 'Crear nuevo inventario', exact: true }).click();
+		await expect.element(page.getByRole('button', { name: 'Comenzar', exact: true })).toBeEnabled();
+		const next = await loadInventoryState();
+		expect(next.session.id).not.toBe(previous.id);
+		expect(next.session.status).toBe('not_started');
+		expect(next.session.startedAt).toBeUndefined();
+		expect(next.catalog).toHaveLength(2);
+		expect(next.catalog.map((product) => product.key)).toEqual(
+			previous.products.map((product) => product.key)
+		);
+		expect(next.catalog.every((product) => !product.countedAt)).toBe(true);
+		const history = await loadLatestBackup();
+		expect(history?.session.id).toBe(previous.id);
+		expect(history?.catalog[0].physical).toBe(0);
+		expect(history?.catalog[0].countedAt).toBeTruthy();
+		db.close();
+		await db.open();
+		expect((await loadInventoryState()).session.status).toBe('not_started');
+	});
+
+	it('resets the current session only after confirmation and keeps every older backup', async () => {
+		const previous = await mountCounted('paused');
+		await db.backups.put(createInventoryExport(previous.products, previous));
+		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
+		await page.getByRole('button', { name: 'Reiniciar conteo', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+		expect((await loadInventoryState()).catalog[0].countedAt).toBeTruthy();
+		await page.getByRole('button', { name: 'Reiniciar conteo', exact: true }).click();
+		await dialog.getByRole('checkbox').click();
+		await dialog.getByRole('button', { name: 'Confirmar reinicio', exact: true }).click();
+		await expect.element(page.getByRole('button', { name: 'Comenzar', exact: true })).toBeEnabled();
+		const reset = await loadInventoryState();
+		expect(reset.session.id).toBe(previous.id);
+		expect(reset.catalog).toHaveLength(2);
+		expect(reset.session.startedAt).toBeUndefined();
+		expect(reset.catalog.every((product) => !product.countedAt && product.physical === 0)).toBe(
+			true
+		);
+		expect(await db.backups.count()).toBe(2);
+	});
+
+	it('keeps original counts and shows the storage error inside the confirmation dialog', async () => {
+		const original = await mountCounted('paused');
+		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
+		await page.getByRole('button', { name: 'Reiniciar conteo', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await dialog.getByRole('checkbox').click();
+		const rejectWrite = () => {
+			throw new Error('almacenamiento no disponible');
+		};
+		db.state.hook('updating', rejectWrite);
+		try {
+			await dialog.getByRole('button', { name: 'Confirmar reinicio', exact: true }).click();
+			await expect
+				.element(dialog.getByRole('alert'))
+				.toHaveTextContent('almacenamiento no disponible');
+		} finally {
+			db.state.hook('updating').unsubscribe(rejectWrite);
+		}
+		expect((await loadInventoryState()).catalog[0].countedAt).toBe(original.products[0].countedAt);
+		expect(await db.backups.count()).toBe(0);
+		await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+	});
+
+	it('rejects invalid JSON and previews a valid legacy backup before replacing existing data', async () => {
+		const original = await mountCounted('completed');
+		await page.getByRole('button', { name: 'Respaldo', exact: true }).click();
+		uploadBackup({ version: 99 });
+		await expect.element(page.getByRole('status')).toHaveTextContent('No se pudo restaurar');
+		expect((await loadInventoryState()).session.id).toBe(original.id);
+		const incoming = {
+			...createInventoryExport(original.products, {
+				...original,
+				id: 'other-device',
+				status: 'paused',
+				finishedAt: undefined
+			}),
+			version: 1
+		};
+		uploadBackup(incoming);
+		const dialog = page.getByRole('dialog');
+		await expect
+			.element(page.getByTestId('backup-preview'))
+			.toHaveTextContent('Productos: 2 · Contados: 1 · Pendientes: 1');
+		await expect.element(dialog).toHaveTextContent('Se reemplazarán los datos locales');
+		expect((await loadInventoryState()).session.id).toBe(original.id);
+		await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+		expect((await loadInventoryState()).session.id).toBe(original.id);
+		uploadBackup(incoming);
+		await dialog.getByRole('checkbox').click();
+		await dialog.getByRole('button', { name: 'Confirmar restauración', exact: true }).click();
+		await expect.element(page.getByRole('status')).toHaveTextContent('restaurado con sus conteos');
+		const restored = await loadInventoryState();
+		expect(restored.session.id).toBe('other-device');
+		expect(restored.catalog[0].physical).toBe(0);
+		expect(restored.catalog[0].countedAt).toBeTruthy();
+		expect((await loadLatestBackup())?.session.id).toBe(original.id);
+	});
+
+	it('restores 500 counts from 2401 products into an empty database and persists extra work', async () => {
+		const template = createSeedCatalog()[0];
+		const catalog = Array.from({ length: 2401 }, (_, index) => {
+			const product = {
+				...template,
+				id: `P-${index}`,
+				key: `KEY-${index}`,
+				alternateKey: `ALT-${index}`
+			};
+			return index < 500 ? applyPhysicalCount(product, index % 30) : product;
+		});
+		const session = transitionSession({ ...createSession(), products: catalog }, 'active');
+		const movements = [
+			{
+				id: 'move',
+				productId: catalog[0].id,
+				productName: catalog[0].name,
+				type: 'adjustment' as const,
+				quantity: 1,
+				occurredAt: new Date().toISOString()
+			}
+		];
+		const backup = createInventoryExport(session.products, session, movements);
+		render(App);
+		await page.getByRole('button', { name: 'Inventario', exact: true }).click();
+		await expect.element(page.getByRole('button', { name: 'Comenzar', exact: true })).toBeEnabled();
+		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
+		uploadBackup(backup);
+		const dialog = page.getByRole('dialog');
+		await expect.element(dialog).toHaveTextContent('No hay productos ni conteos locales');
+		await dialog.getByRole('checkbox').click();
+		await dialog.getByRole('button', { name: 'Confirmar restauración', exact: true }).click();
+		await expect.element(page.getByRole('status')).toHaveTextContent('restaurado con sus conteos');
+		db.close();
+		await db.open();
+		const restored = await loadInventoryState();
+		expect(restored.session.status).toBe('active');
+		expect(restored.session.startedAt).toBe(session.startedAt);
+		expect(restored.catalog).toHaveLength(2401);
+		expect(restored.catalog).toMatchObject(backup.catalog);
+		expect(restored.catalog.filter((product) => product.countedAt)).toHaveLength(500);
+		expect(restored.movements).toEqual(movements);
 	});
 });

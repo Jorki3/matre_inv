@@ -89,7 +89,7 @@ try {
 	assert.equal(rows[1].Diferencia, null);
 	await nav('Respaldo');
 	const jsonDownload = page.waitForEvent('download');
-	await page.getByRole('button', { name: 'Exportar respaldo', exact: true }).click();
+	await page.getByRole('button', { name: 'Exportar respaldo JSON', exact: true }).click();
 	const backup = await jsonDownload;
 	const json = JSON.parse(await fs.readFile(await backup.path(), 'utf8'));
 	assert.equal(json.catalog.length, 2401);
@@ -98,18 +98,105 @@ try {
 	assert.equal(json.catalog[0].physical, 0);
 	assert.ok(json.catalog[0].countedAt);
 	await page.getByRole('status').filter({ hasText: 'JSON listo' }).waitFor();
-	page.once('dialog', (d) => d.accept());
-	await page.getByLabel('Importar respaldo', { exact: true }).setInputFiles({
+	await page.getByLabel('Importar respaldo JSON', { exact: true }).setInputFiles({
 		name: 'respaldo.json',
 		mimeType: 'application/json',
 		buffer: Buffer.from(JSON.stringify(json))
 	});
+	const restoreDialog = page.getByRole('dialog');
+	await restoreDialog
+		.getByTestId('backup-preview')
+		.filter({ hasText: 'Productos: 2401' })
+		.waitFor();
+	assert.equal(
+		await restoreDialog
+			.getByRole('button', { name: 'Confirmar restauración', exact: true })
+			.isDisabled(),
+		true
+	);
+	await restoreDialog.getByRole('checkbox').check();
+	await restoreDialog.getByRole('button', { name: 'Confirmar restauración', exact: true }).click();
 	await page.getByRole('status').filter({ hasText: 'restaurado con sus conteos' }).waitFor();
 	await nav('Inventario');
 	await search.fill('ALT0');
 	await card.getByRole('button').click();
 	assert.equal(await page.getByRole('spinbutton', { name: 'Cantidad física' }).inputValue(), '0');
 	assert.match(await page.getByTestId('session-status').innerText(), /Finalizado/);
+	// A new inventory keeps the catalog, archives the completed session and does not start itself.
+	await page.getByRole('button', { name: 'Nuevo inventario', exact: true }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Cancelar', exact: true }).click();
+	assert.match(await page.getByTestId('session-status').innerText(), /Finalizado/);
+	await page.getByRole('button', { name: 'Nuevo inventario', exact: true }).click();
+	const priorDownload = page.waitForEvent('download');
+	await page
+		.getByRole('dialog')
+		.getByRole('button', { name: 'Descargar respaldo actual JSON', exact: true })
+		.click();
+	const prior = await priorDownload;
+	assert.match(prior.suggestedFilename(), /^MATRE_Inventario_\d{4}-\d{2}-\d{2}\.json$/);
+	await page.getByRole('dialog').getByRole('checkbox').check();
+	await page
+		.getByRole('dialog')
+		.getByRole('button', { name: 'Crear nuevo inventario', exact: true })
+		.click();
+	await page.getByRole('status').filter({ hasText: 'Nuevo inventario preparado' }).waitFor();
+	assert.match(await page.getByTestId('session-status').innerText(), /Sin iniciar · 0\/2401/);
+	await page.getByRole('button', { name: 'Comenzar', exact: true }).click();
+	await page.getByRole('status').filter({ hasText: 'En curso' }).waitFor();
+	await search.fill('ALT0');
+	await card.getByRole('button').click();
+	await page.getByRole('spinbutton', { name: 'Cantidad física' }).fill('0');
+	await page.getByRole('button', { name: 'Guardar cantidad', exact: true }).click();
+	await page.getByRole('status').filter({ hasText: '0 unidades guardadas' }).waitFor();
+	await nav('Configuración');
+	await page.getByRole('button', { name: 'Reiniciar conteo', exact: true }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Cancelar', exact: true }).click();
+	await page.getByRole('button', { name: 'Reiniciar conteo', exact: true }).click();
+	await page.getByRole('dialog').getByRole('checkbox').check();
+	await page
+		.getByRole('dialog')
+		.getByRole('button', { name: 'Confirmar reinicio', exact: true })
+		.click();
+	await page.getByRole('status').filter({ hasText: 'Conteos reiniciados' }).waitFor();
+	assert.match(await page.getByTestId('session-status').innerText(), /Sin iniciar · 0\/2401/);
+	await page.reload({ waitUntil: 'networkidle' });
+	await nav('Inventario');
+	assert.match(await page.getByTestId('session-status').innerText(), /Sin iniciar · 0\/2401/);
+	// Simulate a PC with a separate, empty IndexedDB, restoring the actual mobile download.
+	const pc = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+	const desktop = await pc.newPage();
+	desktop.on('pageerror', (error) => errors.push(error.message));
+	await desktop.goto(url, { waitUntil: 'networkidle' });
+	await desktop
+		.getByRole('navigation')
+		.getByRole('button', { name: 'Respaldo', exact: true })
+		.click();
+	await desktop.getByLabel('Importar respaldo JSON', { exact: true }).setInputFiles({
+		name: 'mobile.json',
+		mimeType: 'application/json',
+		buffer: Buffer.from(JSON.stringify(json))
+	});
+	const pcDialog = desktop.getByRole('dialog');
+	await pcDialog.getByTestId('backup-preview').waitFor();
+	assert.match(await pcDialog.innerText(), /No hay productos ni conteos locales/);
+	await pcDialog.getByRole('checkbox').check();
+	await pcDialog.getByRole('button', { name: 'Confirmar restauración', exact: true }).click();
+	await desktop.getByRole('status').filter({ hasText: 'restaurado con sus conteos' }).waitFor();
+	await desktop.reload({ waitUntil: 'networkidle' });
+	await desktop
+		.getByRole('navigation')
+		.getByRole('button', { name: 'Inventario', exact: true })
+		.click();
+	assert.match(await desktop.getByTestId('session-status').innerText(), /Finalizado · 1\/2401/);
+	await desktop.getByRole('textbox', { name: 'Buscar productos' }).fill('ALT0');
+	await desktop.getByTestId('product-card').getByRole('button').click();
+	assert.equal(
+		await desktop.getByRole('spinbutton', { name: 'Cantidad física' }).inputValue(),
+		'0'
+	);
+	await pc.close();
+	await search.fill('ALT0');
+	await card.getByRole('button').click();
 	await page.screenshot({ path: join(tmpdir(), 'matre-mobile.png'), fullPage: true });
 	assert.deepEqual(errors, []);
 	console.log(
@@ -122,6 +209,9 @@ try {
 			finalizationConfirmation: true,
 			xlsxExport: true,
 			jsonRestore: true,
+			newInventory: true,
+			resetCount: true,
+			mobileToDesktop: true,
 			errors
 		})
 	);

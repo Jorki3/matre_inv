@@ -13,6 +13,7 @@ export interface Product {
 	expected: number;
 	physical: number;
 	countedAt?: string;
+	status?: ProductStatus;
 	createdAt: string;
 	source?: string;
 	notes?: string;
@@ -90,6 +91,7 @@ export function applyPhysicalCount(product: Product, quantity: number): Product 
 	return {
 		...product,
 		physical: Number(quantity),
+		status: quantity === product.expected ? 'counted' : 'difference',
 		countedAt: new Date().toISOString(),
 		notes: product.notes ?? 'Conteo registrado'
 	};
@@ -284,6 +286,43 @@ export function createSession(name = 'Inventario MATRE'): InventorySession {
 	};
 }
 
+export function resetSessionCounts(
+	session: InventorySession,
+	action: 'reset' | 'new'
+): InventorySession {
+	if (action === 'new' && session.status !== 'completed')
+		throw new Error('Finaliza la sesión antes de crear un nuevo inventario.');
+	if (action === 'reset' && session.status === 'completed')
+		throw new Error('La sesión finalizada es de solo lectura. Crea un nuevo inventario.');
+	const { startedAt: _startedAt, finishedAt: _finishedAt, ...previous } = session;
+	void _startedAt;
+	void _finishedAt;
+	return {
+		...previous,
+		id: action === 'new' ? createId('session') : session.id,
+		status: 'not_started',
+		products: session.products.map((product) => {
+			const { countedAt: _countedAt, ...catalog } = product;
+			void _countedAt;
+			return {
+				...catalog,
+				physical: 0,
+				status: 'pending',
+				...(product.notes === 'Conteo registrado' ? { notes: undefined } : {})
+			};
+		})
+	};
+}
+
+export function backupFilename(date = new Date(), previous = false): string {
+	const day = [
+		date.getFullYear(),
+		String(date.getMonth() + 1).padStart(2, '0'),
+		String(date.getDate()).padStart(2, '0')
+	].join('-');
+	return `MATRE_Inventario_${day}${previous ? '_previo' : ''}.json`;
+}
+
 export const sessionLabels: Record<InventoryStatus, string> = {
 	not_started: 'Sin iniciar',
 	active: 'En curso',
@@ -444,7 +483,10 @@ export function migrateProducts(input: unknown): Product[] {
 		keys.add(key);
 		return {
 			...value,
-			alternateKey: String(value.alternateKey ?? value.barcode ?? '')
+			alternateKey: String(value.alternateKey ?? value.barcode ?? ''),
+			...(Object.hasOwn(value, 'status')
+				? { status: getProductStatus(value as unknown as Product) }
+				: {})
 		} as unknown as Product;
 	});
 }
@@ -496,6 +538,8 @@ export function validateBackup(input: unknown): {
 } {
 	try {
 		const candidate = record(input);
+		if (typeof candidate.id !== 'string' || !candidate.id.trim())
+			throw new Error('Identificador de respaldo inválido.');
 		if (candidate.version !== 1 && candidate.version !== 2)
 			throw new Error('La versión del respaldo no es compatible.');
 		if (
@@ -522,14 +566,20 @@ export function validateBackup(input: unknown): {
 
 export function createInventoryExport(
 	products: Product[],
-	session: InventorySession
+	session: InventorySession,
+	movements: InventoryMovement[] = []
 ): InventorySnapshot {
+	const catalog = products.map((product) => ({
+		...product,
+		alternateKey: product.alternateKey ?? product.barcode ?? '',
+		status: getProductStatus(product)
+	}));
 	return {
 		id: createId('backup'),
 		version: 2,
 		exportedAt: new Date().toISOString(),
-		session: { ...session, products },
-		catalog: products,
-		movements: []
+		session: { ...session, products: catalog },
+		catalog,
+		movements
 	};
 }
