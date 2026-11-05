@@ -27,7 +27,7 @@
 					>
 				</div>
 				<div class="flex justify-between rounded-xl bg-zinc-100 p-3 dark:bg-zinc-800">
-					<span>Versión del respaldo</span><span>2 (compatible con 1)</span>
+					<span>Versión del respaldo</span><span>3 (compatible con 1 y 2)</span>
 				</div>
 			</div>
 		</div>

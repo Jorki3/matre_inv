@@ -42,10 +42,14 @@
 					]}
 				</p>
 				<p>Formato: {app.dataAction.snapshot.version}</p>
+				<p>
+					Hallazgos incluidos (todas las sesiones): {app.dataAction.snapshot.unmatchedArticles
+						?.length ?? 0}
+				</p>
 			</div>
 			<p class="mt-3 text-sm">
 				{app.products.length || app.session.startedAt
-					? `Se reemplazarán los datos locales: ${app.products.length} productos y ${app.metrics.counted} conteos.`
+					? `Se reemplazarán los datos locales, incluidos los hallazgos: ${app.products.length} productos y ${app.metrics.counted} conteos.`
 					: 'No hay productos ni conteos locales. Se restaurará el trabajo del respaldo.'}
 			</p>
 		{:else}
@@ -56,7 +60,8 @@
 			</p>
 			<p class="mt-2 text-sm">
 				Se conservarán los {app.products.length} productos con su clave, clave alterna, descripción y
-				existencia SICAR. Se reiniciarán las estadísticas y el progreso.
+				existencia SICAR. Se reiniciarán las estadísticas y el progreso. Los artículos no encontrados
+				se conservarán asociados a su sesión original.
 			</p>
 		{/if}
 		<p class="mt-3 text-sm text-zinc-600 dark:text-zinc-300">

@@ -10,6 +10,12 @@
 <section class="space-y-3" aria-label="Conteo de inventario">
 	<SessionControls {app} />
 	<ProductSearch {app} />
+	{#if app.visibleProducts.length || !app.query.trim()}<button
+			type="button"
+			disabled={!app.canCount}
+			class="min-h-11 rounded-xl border border-red-600 px-4 text-sm font-medium text-red-600 disabled:opacity-50"
+			onclick={() => app.startUnmatchedRegistration()}>Registrar artículo no encontrado</button
+		>{/if}
 	<p class="text-sm text-zinc-500">
 		{app.visibleProducts.length} productos · {app.canCount
 			? 'Toca una tarjeta para capturar.'
@@ -24,6 +30,13 @@
 				{app.products.length
 					? 'No hay productos que coincidan.'
 					: 'Importa tu catálogo desde Productos. No se cargan artículos de demostración.'}
-			</p>{/each}
+			</p>
+			{#if app.query.trim()}<button
+					type="button"
+					disabled={!app.canCount}
+					class="min-h-11 w-full rounded-xl bg-red-600 px-4 text-sm font-medium text-white disabled:opacity-50"
+					onclick={() => app.startUnmatchedRegistration()}>Registrar artículo no encontrado</button
+				>{/if}
+		{/each}
 	</div>
 </section>
