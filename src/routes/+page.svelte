@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { asset } from '$app/paths';
 	import { onMount } from 'svelte';
 	import {
 		Archive,
@@ -257,7 +258,7 @@
 		lastBackupAt = savedState.lastBackupAt ?? null;
 		hydrated = true;
 		if ('serviceWorker' in navigator) {
-			navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+			navigator.serviceWorker.register(asset('sw.js')).catch(() => undefined);
 		}
 	});
 </script>
@@ -265,7 +266,7 @@
 <svelte:head>
 	<title>MATRE Inventario</title>
 	<meta name="theme-color" content="#B91C1C" />
-	<link rel="manifest" href="/manifest.webmanifest" />
+	<link rel="manifest" href={asset('manifest.webmanifest')} />
 </svelte:head>
 
 <div class="min-h-screen bg-zinc-50 text-zinc-900 transition-colors dark:bg-zinc-950 dark:text-zinc-50">

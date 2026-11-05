@@ -39,12 +39,19 @@ bun run build
 
 ## Despliegue en GitHub Pages
 
-1. Ajusta la variable `BASE_PATH` si tu repositorio no está en la raíz de GitHub Pages:
+El workflow de GitHub Actions publica automáticamente al hacer push a `main`.
+Para este repositorio de proyecto, la compilación usa `/matre_inv` como ruta base;
+en desarrollo local, la ruta base queda vacía.
 
 ```bash
-BASE_PATH=/matre_inv/ bun run build
+bun run build
 ```
 
-2. Publica la carpeta `build` en GitHub Pages.
-3. La aplicación no almacena datos sensibles ni catálogos reales en el repositorio; los inventarios se importan o se generan localmente desde el navegador.
+La salida estática se genera en `build`. Para probar localmente el build de Pages:
 
+```bash
+BASE_PATH=/matre_inv bun run build
+bun run preview
+```
+
+La aplicación no almacena datos sensibles ni catálogos reales en el repositorio; los inventarios se importan o se generan localmente desde el navegador.

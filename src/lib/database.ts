@@ -25,6 +25,17 @@ class InventoryDatabase extends Dexie {
 
 export const db = new InventoryDatabase();
 
+function copyProduct(product: Product): Product {
+	return { ...product };
+}
+
+function copySession(session: InventorySession): InventorySession {
+	return {
+		...session,
+		products: session.products.map(copyProduct)
+	};
+}
+
 export async function loadInventoryState(): Promise<StoredInventoryState> {
 	if (typeof window === 'undefined') {
 		return {
@@ -67,12 +78,23 @@ export async function loadInventoryState(): Promise<StoredInventoryState> {
 
 export async function saveInventoryState(payload: StoredInventoryState): Promise<void> {
 	if (typeof window === 'undefined') return;
-	await db.state.put({ ...payload, id: payload.id ?? 'main', lastSavedAt: new Date().toISOString() });
+	await db.state.put({
+		...payload,
+		id: payload.id ?? 'main',
+		session: copySession(payload.session),
+		catalog: payload.catalog.map(copyProduct),
+		lastSavedAt: new Date().toISOString()
+	});
 }
 
 export async function saveBackup(snapshot: InventorySnapshot): Promise<void> {
 	if (typeof window === 'undefined') return;
-	await db.backups.put(snapshot);
+	await db.backups.put({
+		...snapshot,
+		session: copySession(snapshot.session),
+		catalog: snapshot.catalog.map(copyProduct),
+		movements: snapshot.movements.map((movement) => ({ ...movement }))
+	});
 }
 
 export async function loadLatestBackup(): Promise<InventorySnapshot | undefined> {

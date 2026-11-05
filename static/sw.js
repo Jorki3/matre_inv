@@ -1,5 +1,7 @@
 const CACHE_NAME = 'matre-inventario-v1';
-const PRECACHE = ['/', '/manifest.webmanifest', '/favicon.svg'];
+const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, '');
+const APP_ROOT = `${BASE_PATH}/`;
+const PRECACHE = [APP_ROOT, `${BASE_PATH}/manifest.webmanifest`, `${BASE_PATH}/favicon.svg`];
 
 self.addEventListener('install', (event) => {
 	event.waitUntil(
@@ -20,7 +22,7 @@ self.addEventListener('fetch', (event) => {
 	if (event.request.method !== 'GET') return;
 	const url = new URL(event.request.url);
 	if (url.origin !== self.location.origin) return;
-	if (url.pathname === '/sw.js') return;
+	if (url.pathname === `${BASE_PATH}/sw.js`) return;
 
 	event.respondWith(
 		caches.match(event.request).then((cached) => {
@@ -31,7 +33,7 @@ self.addEventListener('fetch', (event) => {
 					caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
 					return response;
 				})
-				.catch(() => caches.match('/'));
+				.catch(() => caches.match(APP_ROOT));
 		})
 	);
 });

@@ -2,15 +2,15 @@
   "name": "MATRE Inventario",
   "short_name": "MATRE",
   "description": "Inventario físico para MATRE Ferretería.",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#fafaf9",
   "theme_color": "#B91C1C",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/favicon.svg",
+      "src": "./favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
