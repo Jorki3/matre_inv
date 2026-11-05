@@ -6,6 +6,7 @@
 	import DashboardView from './DashboardView.svelte';
 	import InventoryView from './InventoryView.svelte';
 	import CatalogView from './CatalogView.svelte';
+	import UnmatchedArticlesView from './UnmatchedArticlesView.svelte';
 	import BackupView from './BackupView.svelte';
 	import SettingsView from './SettingsView.svelte';
 	import DataActionDialog from './DataActionDialog.svelte';
@@ -36,6 +37,7 @@
 		{#if app.activeView === 'inventory'}
 			<InventoryView {app} />
 		{/if}
+		{#if app.activeView === 'unmatched'}<UnmatchedArticlesView {app} />{/if}
 		{#if app.activeView === 'products'}
 			<CatalogView {app} />
 		{/if}

@@ -1,9 +1,11 @@
 import { asset } from '$app/paths';
 import { onMount } from 'svelte';
-import { SvelteDate } from 'svelte/reactivity';
+import { SvelteDate, SvelteMap } from 'svelte/reactivity';
 import * as XLSX from 'xlsx';
 import {
 	backupFilename,
+	createId,
+	normalizeText,
 	resetSessionCounts,
 	computeMetrics,
 	createInventoryExport,
@@ -41,6 +43,14 @@ import {
 	saveInventoryState
 } from '$lib/database';
 import { createSicarExport, SICAR_EXPORT_LAYOUT } from '$lib/sicar-export';
+import {
+	saveUnmatchedArticle,
+	removeUnmatchedArticle,
+	unmatchedExportRows,
+	reviewLabels,
+	type UnmatchedArticle,
+	type UnmatchedDraft
+} from '$lib/unmatched-articles';
 import { navItems, filters, type DataAction } from './inventory-ui';
 
 /** One reactive controller per mounted application; never shared across users or SSR requests. */
@@ -59,6 +69,35 @@ export function createInventoryController() {
 	let busy = $state(false);
 	let lastBackupAt = $state<string | null>(null);
 	let movements = $state<InventoryMovement[]>([]);
+	let unmatchedArticles = $state<UnmatchedArticle[]>([]);
+	let unmatchedSessionId = $state<string | undefined>();
+	let unmatchedQuery = $state('');
+	let unmatchedDraft = $state<UnmatchedDraft | null>(null);
+	let unmatchedError = $state('');
+	const currentUnmatched = $derived(
+		unmatchedArticles.filter((article) => article.sessionId === session.id)
+	);
+	const unmatchedMetrics = $derived({
+		total: currentUnmatched.length,
+		pending: currentUnmatched.filter((article) => article.reviewStatus === 'pending').length
+	});
+	const unmatchedSessions = $derived.by(() => {
+		const sessions = new SvelteMap([[session.id, { id: session.id, name: session.name }]]);
+		for (const article of unmatchedArticles)
+			if (!sessions.has(article.sessionId))
+				sessions.set(article.sessionId, { id: article.sessionId, name: article.sessionName });
+		return [...sessions.values()];
+	});
+	const selectedUnmatched = $derived(
+		unmatchedArticles.filter((article) => article.sessionId === (unmatchedSessionId ?? session.id))
+	);
+	const visibleUnmatched = $derived(
+		selectedUnmatched.filter((article) =>
+			normalizeText(
+				`${article.description} ${article.key} ${article.alternateKey} ${article.location} ${article.notes} ${article.linkedProductKey ?? ''} ${reviewLabels[article.reviewStatus]}`
+			).includes(normalizeText(unmatchedQuery))
+		)
+	);
 	let dataAction = $state<DataAction | null>(null);
 	let acknowledged = $state(false);
 	let actionError = $state('');
@@ -104,7 +143,8 @@ export function createInventoryController() {
 		next: InventorySession,
 		archive = false,
 		backupAt = lastBackupAt,
-		nextMovements = movements
+		nextMovements = movements,
+		nextUnmatched = unmatchedArticles
 	): Promise<boolean> {
 		if (!hydrated || busy) return false;
 		busy = true;
@@ -117,7 +157,8 @@ export function createInventoryController() {
 					lastSavedAt: new SvelteDate().toISOString(),
 					theme,
 					lastBackupAt: backupAt ?? undefined,
-					movements: $state.snapshot(nextMovements)
+					movements: $state.snapshot(nextMovements),
+					unmatchedArticles: $state.snapshot(nextUnmatched)
 				},
 				archive
 			);
@@ -125,6 +166,7 @@ export function createInventoryController() {
 			products = next.products;
 			lastBackupAt = backupAt;
 			movements = nextMovements;
+			unmatchedArticles = nextUnmatched;
 			return true;
 		} catch (error) {
 			message = `No se guardó el cambio. Conservamos el estado anterior. ${error instanceof Error ? error.message : 'Revisa el almacenamiento del navegador.'}`;
@@ -279,7 +321,7 @@ export function createInventoryController() {
 
 	async function exportJsonBackup(): Promise<void> {
 		if (!hydrated || busy) return;
-		downloadJson(createInventoryExport(products, session, movements));
+		downloadJson(createInventoryExport(products, session, movements, unmatchedArticles));
 		if (await commit({ ...session, products }, false, new SvelteDate().toISOString()))
 			message = 'Respaldo JSON listo para descargar.';
 	}
@@ -335,7 +377,12 @@ export function createInventoryController() {
 					: action.kind === 'new'
 						? []
 						: movements;
-			if (await commit(next, true, backupAt, nextMovements)) {
+			const nextUnmatched =
+				action.kind === 'restore' ? (action.snapshot.unmatchedArticles ?? []) : unmatchedArticles;
+			if (await commit(next, true, backupAt, nextMovements, nextUnmatched)) {
+				unmatchedDraft = null;
+				unmatchedSessionId = undefined;
+				unmatchedQuery = '';
 				selectedProductId = null;
 				countDraft = undefined;
 				query = '';
@@ -405,6 +452,7 @@ export function createInventoryController() {
 				session = saved.session;
 				lastBackupAt = saved.lastBackupAt ?? null;
 				movements = saved.movements ?? [];
+				unmatchedArticles = saved.unmatchedArticles ?? [];
 				hydrated = true;
 				message = `Sesión: ${sessionLabels[session.status]}.`;
 			} catch (error) {
@@ -418,7 +466,11 @@ export function createInventoryController() {
 	});
 
 	function downloadCurrentBackup(container?: HTMLElement): void {
-		downloadJson(createInventoryExport(products, session, movements), backupFilename(), container);
+		downloadJson(
+			createInventoryExport(products, session, movements, unmatchedArticles),
+			backupFilename(),
+			container
+		);
 	}
 
 	function setMappingColumn(field: keyof ColumnMapping, column: string): void {
@@ -431,7 +483,124 @@ export function createInventoryController() {
 		headers = [];
 	}
 
+	function startUnmatchedRegistration(article?: UnmatchedArticle): void {
+		if (!canCount || (article && article.sessionId !== session.id)) return;
+		unmatchedSessionId = session.id;
+		unmatchedError = '';
+		unmatchedDraft = article
+			? { ...article, linkedProductKey: article.linkedProductKey ?? '' }
+			: {
+					description: query.trim(),
+					quantity: undefined,
+					key: '',
+					alternateKey: '',
+					location: '',
+					notes: '',
+					reviewStatus: 'pending',
+					linkedProductKey: ''
+				};
+		activeView = 'unmatched';
+	}
+
+	function cancelUnmatchedRegistration(): void {
+		if (busy) return;
+		unmatchedDraft = null;
+		unmatchedError = '';
+	}
+
+	async function saveUnmatched(draft: UnmatchedDraft): Promise<void> {
+		if (!canCount) return;
+		try {
+			const next = saveUnmatchedArticle(
+				session,
+				unmatchedArticles,
+				draft,
+				products,
+				createId('finding'),
+				new SvelteDate().toISOString()
+			);
+			if (await commit({ ...session, products }, false, lastBackupAt, movements, next)) {
+				unmatchedDraft = null;
+				unmatchedQuery = '';
+				unmatchedError = '';
+				message = 'Artículo no encontrado guardado. El conteo oficial no se modificó.';
+			} else unmatchedError = message;
+		} catch (error) {
+			unmatchedError = (error as Error).message;
+			message = unmatchedError;
+		}
+	}
+
+	async function deleteUnmatched(article: UnmatchedArticle): Promise<void> {
+		if (!canCount || article.sessionId !== session.id) return;
+		if (
+			!confirm(
+				`¿Eliminar el hallazgo «${article.description}»? Se guardará una copia local previa.`
+			)
+		)
+			return;
+		try {
+			const next = removeUnmatchedArticle(session, unmatchedArticles, article.id);
+			if (await commit({ ...session, products }, true, lastBackupAt, movements, next)) {
+				if (unmatchedDraft?.id === article.id) unmatchedDraft = null;
+				message = 'Hallazgo eliminado. Se conservó una copia local previa.';
+			}
+		} catch (error) {
+			message = (error as Error).message;
+		}
+	}
+
+	function exportUnmatched(): void {
+		if (!hydrated || busy || !selectedUnmatched.length) return;
+		const workbook = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(
+			workbook,
+			XLSX.utils.json_to_sheet(unmatchedExportRows(selectedUnmatched)),
+			'No encontrados'
+		);
+		XLSX.writeFile(workbook, 'MATRE_Articulos_no_encontrados.xlsx');
+		message = 'Excel de artículos no encontrados generado por separado del catálogo SICAR.';
+	}
+
 	return {
+		get unmatchedMetrics() {
+			return unmatchedMetrics;
+		},
+		get unmatchedDraft() {
+			return unmatchedDraft;
+		},
+		get unmatchedError() {
+			return unmatchedError;
+		},
+		get unmatchedSessions() {
+			return unmatchedSessions;
+		},
+		get visibleUnmatched() {
+			return visibleUnmatched;
+		},
+		get selectedUnmatchedCount() {
+			return selectedUnmatched.length;
+		},
+		get unmatchedSessionId() {
+			return unmatchedSessionId ?? session.id;
+		},
+		set unmatchedSessionId(value: string) {
+			unmatchedSessionId = value;
+			unmatchedDraft = null;
+			unmatchedError = '';
+		},
+		get unmatchedQuery() {
+			return unmatchedQuery;
+		},
+		set unmatchedQuery(value: string) {
+			unmatchedQuery = value;
+		},
+		startUnmatchedRegistration,
+		cancelUnmatchedRegistration,
+		saveUnmatched,
+		deleteUnmatched,
+		exportUnmatched,
+
 		get theme() {
 			return theme;
 		},

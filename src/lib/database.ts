@@ -1,3 +1,4 @@
+import { validateUnmatchedArticles, type UnmatchedArticle } from './unmatched-articles';
 import Dexie, { type Table } from 'dexie';
 import {
 	createSession,
@@ -18,6 +19,7 @@ export interface StoredInventoryState {
 	theme: ThemeMode;
 	lastBackupAt?: string;
 	movements?: InventoryMovement[];
+	unmatchedArticles?: UnmatchedArticle[];
 }
 
 class InventoryDatabase extends Dexie {
@@ -49,7 +51,12 @@ function copySession(session: InventorySession): InventorySession {
 export async function loadInventoryState(): Promise<StoredInventoryState> {
 	if (typeof window !== 'undefined') {
 		const existing = await db.state.get('main');
-		if (existing) return { ...existing, ...migrateInventory(existing.session, existing.catalog) };
+		if (existing)
+			return {
+				...existing,
+				...migrateInventory(existing.session, existing.catalog),
+				unmatchedArticles: validateUnmatchedArticles(existing.unmatchedArticles)
+			};
 	}
 	const fallback: StoredInventoryState = {
 		id: 'main',
@@ -72,12 +79,21 @@ export async function saveInventoryState(
 			const previous = await db.state.get('main');
 			if (previous)
 				await db.backups.put({
-					...createInventoryExport(previous.catalog, previous.session, previous.movements),
+					...createInventoryExport(
+						previous.catalog,
+						previous.session,
+						previous.movements,
+						previous.unmatchedArticles
+					),
 					session: previous.session
 				});
 		}
+		const current = await db.state.get(payload.id ?? 'main');
 		await db.state.put({
 			...payload,
+			unmatchedArticles: validateUnmatchedArticles(
+				payload.unmatchedArticles ?? current?.unmatchedArticles
+			),
 			id: payload.id ?? 'main',
 			session: copySession(payload.session),
 			catalog: payload.catalog.map(copyProduct),

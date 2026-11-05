@@ -527,3 +527,163 @@ describe('SICAR catalog updates in IndexedDB', () => {
 		expect((await loadLatestBackup())?.catalog).toHaveLength(12);
 	});
 });
+
+async function mountUnmatchedSession() {
+	const products = [{ ...createSeedCatalog()[0], id: 'official-1', source: 'importado' }];
+	const session = transitionSession({ ...createSession(), products }, 'active');
+	await saveInventoryState({
+		id: 'main',
+		session,
+		catalog: products,
+		theme: 'light',
+		lastSavedAt: new Date().toISOString()
+	});
+	render(App);
+	await page.getByRole('button', { name: 'Inventario', exact: true }).click();
+	await expect.element(page.getByTestId('session-status')).toHaveTextContent('En curso');
+	return session;
+}
+
+describe('unmatched article UI and persistence', () => {
+	it('prefills a failed search, saves decimals without keys, edits, reviews and persists without affecting official counts', async () => {
+		const session = await mountUnmatchedSession();
+		await page.getByRole('textbox', { name: 'Buscar productos' }).fill('Tornillo sin catálogo');
+		await page
+			.getByRole('button', { name: 'Registrar artículo no encontrado', exact: true })
+			.click();
+		await expect
+			.element(page.getByRole('textbox', { name: 'Descripción del producto', exact: true }))
+			.toHaveValue('Tornillo sin catálogo');
+		await page
+			.getByRole('spinbutton', { name: 'Cantidad física encontrada', exact: true })
+			.fill('1.25');
+		await page.getByRole('button', { name: 'Guardar artículo', exact: true }).click();
+		await expect
+			.element(page.getByRole('status'))
+			.toHaveTextContent('Artículo no encontrado guardado');
+		await expect.element(page.getByTestId('unmatched-card')).toHaveTextContent('1.25');
+		const first = await loadInventoryState();
+		expect(first.catalog[0].countedAt).toBeUndefined();
+		expect(first.unmatchedArticles?.[0].key).toBe('');
+		await page
+			.getByTestId('unmatched-card')
+			.getByRole('button', { name: 'Editar', exact: true })
+			.click();
+		await page
+			.getByRole('spinbutton', { name: 'Cantidad física encontrada', exact: true })
+			.fill('0');
+		await page
+			.getByRole('combobox', { name: 'Estado de revisión', exact: true })
+			.selectOptions('identified');
+		await page
+			.getByRole('combobox', { name: 'Clave principal SICAR relacionada', exact: true })
+			.fill(session.products[0].key);
+		await page.getByRole('button', { name: 'Guardar artículo', exact: true }).click();
+		await expect
+			.element(page.getByTestId('unmatched-card'))
+			.toHaveTextContent('Identificado en SICAR');
+		db.close();
+		await db.open();
+		const saved = await loadInventoryState();
+		expect(saved.unmatchedArticles?.[0]).toMatchObject({
+			quantity: 0,
+			linkedProductKey: session.products[0].key,
+			reviewStatus: 'identified'
+		});
+		expect(saved.catalog[0].countedAt).toBeUndefined();
+		expect(saved.session.status).toBe('active');
+		const consent = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		try {
+			await page
+				.getByTestId('unmatched-card')
+				.getByRole('button', { name: 'Eliminar', exact: true })
+				.click();
+			expect((await loadInventoryState()).unmatchedArticles).toHaveLength(1);
+			consent.mockReturnValue(true);
+			await page
+				.getByTestId('unmatched-card')
+				.getByRole('button', { name: 'Eliminar', exact: true })
+				.click();
+			await expect.element(page.getByRole('status')).toHaveTextContent('Hallazgo eliminado');
+		} finally {
+			consent.mockRestore();
+		}
+		expect((await loadInventoryState()).unmatchedArticles).toHaveLength(0);
+		expect((await loadLatestBackup())?.unmatchedArticles).toHaveLength(1);
+	});
+
+	it('keeps findings on count reset and new inventory, and restores their JSON independently of the official catalog', async () => {
+		const session = await mountUnmatchedSession();
+		await page
+			.getByRole('button', { name: 'Registrar artículo no encontrado', exact: true })
+			.click();
+		await page
+			.getByRole('textbox', { name: 'Descripción del producto', exact: true })
+			.fill('Artículo especial');
+		await page
+			.getByRole('spinbutton', { name: 'Cantidad física encontrada', exact: true })
+			.fill('2.5');
+		await page.getByRole('button', { name: 'Guardar artículo', exact: true }).click();
+		await expect.element(page.getByRole('status')).toHaveTextContent('guardado');
+		const state = await loadInventoryState();
+		const backup = createInventoryExport(
+			state.catalog,
+			state.session,
+			state.movements,
+			state.unmatchedArticles
+		);
+		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
+		await page.getByRole('button', { name: 'Reiniciar conteo', exact: true }).click();
+		await page.getByRole('dialog').getByRole('checkbox').click();
+		await page
+			.getByRole('dialog')
+			.getByRole('button', { name: 'Confirmar reinicio', exact: true })
+			.click();
+		await expect.element(page.getByRole('button', { name: 'Comenzar', exact: true })).toBeEnabled();
+		expect((await loadInventoryState()).unmatchedArticles).toHaveLength(1);
+		await page.getByRole('button', { name: 'Comenzar', exact: true }).click();
+		await expect.element(page.getByTestId('session-status')).toHaveTextContent('En curso');
+		const consent = vi.spyOn(window, 'confirm').mockReturnValue(true);
+		try {
+			await page.getByRole('button', { name: 'Finalizar', exact: true }).click();
+			await expect.element(page.getByTestId('session-status')).toHaveTextContent('Finalizado');
+		} finally {
+			consent.mockRestore();
+		}
+		await page.getByRole('button', { name: 'Artículos no encontrados', exact: true }).click();
+		await expect.element(page.getByTestId('unmatched-card')).toHaveTextContent('Artículo especial');
+		await expect
+			.element(page.getByRole('button', { name: 'Registrar artículo no encontrado', exact: true }))
+			.toBeDisabled();
+		await page.getByRole('button', { name: 'Inventario', exact: true }).click();
+		await page.getByRole('button', { name: 'Nuevo inventario', exact: true }).click();
+		await page.getByRole('dialog').getByRole('checkbox').click();
+		await page
+			.getByRole('dialog')
+			.getByRole('button', { name: 'Crear nuevo inventario', exact: true })
+			.click();
+		await expect.element(page.getByRole('button', { name: 'Comenzar', exact: true })).toBeEnabled();
+		const next = await loadInventoryState();
+		expect(next.session.id).not.toBe(session.id);
+		expect(next.unmatchedArticles).toHaveLength(1);
+		await page.getByRole('button', { name: 'Artículos no encontrados', exact: true }).click();
+		await expect
+			.element(page.getByText('0 registros de esta sesión', { exact: false }))
+			.toBeVisible();
+		await page
+			.getByRole('combobox', { name: 'Sesión de los hallazgos', exact: true })
+			.selectOptions(session.id);
+		await expect.element(page.getByTestId('unmatched-card')).toHaveTextContent('Artículo especial');
+		await page.getByRole('button', { name: 'Respaldo', exact: true }).click();
+		uploadBackup(backup);
+		await page.getByRole('dialog').getByRole('checkbox').click();
+		await page
+			.getByRole('dialog')
+			.getByRole('button', { name: 'Confirmar restauración', exact: true })
+			.click();
+		await expect.element(page.getByRole('status')).toHaveTextContent('restaurado');
+		const restored = await loadInventoryState();
+		expect(restored.unmatchedArticles).toEqual(state.unmatchedArticles);
+		expect(restored.session.id).toBe(session.id);
+	});
+});

@@ -1,3 +1,5 @@
+import { validateUnmatchedArticles, type UnmatchedArticle } from './unmatched-articles';
+
 export type ProductStatus = 'pending' | 'counted' | 'difference';
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type InventoryStatus = 'not_started' | 'active' | 'paused' | 'completed';
@@ -48,6 +50,7 @@ export interface InventorySnapshot {
 	catalog: Product[];
 	movements: InventoryMovement[];
 	lastBackupAt?: string;
+	unmatchedArticles?: UnmatchedArticle[];
 }
 
 export interface ProductMetrics {
@@ -542,13 +545,16 @@ export function validateBackup(input: unknown): {
 		const candidate = record(input);
 		if (typeof candidate.id !== 'string' || !candidate.id.trim())
 			throw new Error('Identificador de respaldo inválido.');
-		if (candidate.version !== 1 && candidate.version !== 2)
+		if (candidate.version !== 1 && candidate.version !== 2 && candidate.version !== 3)
 			throw new Error('La versión del respaldo no es compatible.');
 		if (
 			typeof candidate.exportedAt !== 'string' ||
 			!Number.isFinite(Date.parse(candidate.exportedAt))
 		)
 			throw new Error('Fecha del respaldo inválida.');
+		if (candidate.version === 3 && !Array.isArray(candidate.unmatchedArticles))
+			throw new Error('El respaldo no contiene la lista de hallazgos.');
+		const unmatchedArticles = validateUnmatchedArticles(candidate.unmatchedArticles);
 		const migrated = migrateInventory(candidate.session, candidate.catalog);
 		if (candidate.movements !== undefined && !Array.isArray(candidate.movements))
 			throw new Error('Movimientos inválidos.');
@@ -558,7 +564,8 @@ export function validateBackup(input: unknown): {
 			value: {
 				...candidate,
 				...migrated,
-				movements: candidate.movements ?? []
+				movements: candidate.movements ?? [],
+				unmatchedArticles
 			} as InventorySnapshot
 		};
 	} catch (error) {
@@ -569,7 +576,8 @@ export function validateBackup(input: unknown): {
 export function createInventoryExport(
 	products: Product[],
 	session: InventorySession,
-	movements: InventoryMovement[] = []
+	movements: InventoryMovement[] = [],
+	unmatchedArticles: UnmatchedArticle[] = []
 ): InventorySnapshot {
 	const catalog = products.map((product) => ({
 		...product,
@@ -578,10 +586,11 @@ export function createInventoryExport(
 	}));
 	return {
 		id: createId('backup'),
-		version: 2,
+		version: 3,
 		exportedAt: new Date().toISOString(),
 		session: { ...session, products: catalog },
 		catalog,
-		movements
+		movements,
+		unmatchedArticles
 	};
 }

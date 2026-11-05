@@ -80,6 +80,43 @@ try {
 	await page.getByRole('button', { name: 'Guardar cantidad', exact: true }).click();
 	await page.getByRole('status').filter({ hasText: '0 unidades guardadas' }).waitFor();
 	assert.equal(await search.inputValue(), 'ALT0');
+	// Record and identify a physical finding without adding it to the official inventory.
+	await search.fill('Pieza sin catálogo');
+	await page.getByRole('button', { name: 'Registrar artículo no encontrado', exact: true }).click();
+	assert.equal(
+		await page.getByRole('textbox', { name: 'Descripción del producto', exact: true }).inputValue(),
+		'Pieza sin catálogo'
+	);
+	await page
+		.getByRole('spinbutton', { name: 'Cantidad física encontrada', exact: true })
+		.fill('1.25');
+	await page.getByRole('button', { name: 'Guardar artículo', exact: true }).click();
+	await page.getByRole('status').filter({ hasText: 'Artículo no encontrado guardado' }).waitFor();
+	await page
+		.getByTestId('unmatched-card')
+		.getByRole('button', { name: 'Editar', exact: true })
+		.click();
+	await page
+		.getByRole('combobox', { name: 'Estado de revisión', exact: true })
+		.selectOption('identified');
+	await page
+		.getByRole('combobox', { name: 'Clave principal SICAR relacionada', exact: true })
+		.fill('K00000');
+	await page.getByRole('button', { name: 'Guardar artículo', exact: true }).click();
+	await page.getByTestId('unmatched-card').filter({ hasText: 'Identificado en SICAR' }).waitFor();
+	const findingDownload = page.waitForEvent('download');
+	await page
+		.getByRole('button', { name: 'Exportar artículos no encontrados', exact: true })
+		.click();
+	const findingExcel = await findingDownload;
+	const findingBook = XLSX.read(await fs.readFile(await findingExcel.path()), { type: 'buffer' });
+	const findingRows = XLSX.utils.sheet_to_json(findingBook.Sheets[findingBook.SheetNames[0]]);
+	assert.equal(findingRows.length, 1);
+	assert.equal(findingRows[0]['Cantidad física encontrada'], 1.25);
+	assert.equal(findingRows[0]['Clave SICAR relacionada'], 'K00000');
+	await nav('Inventario');
+	await search.fill('ALT0');
+	assert.match(await page.getByTestId('session-status').innerText(), /1\/2401 contados/);
 	await nav('Productos');
 	await page
 		.getByLabel('Importar catálogo', { exact: true })
@@ -165,6 +202,10 @@ try {
 	assert.equal(json.catalog[0].category, 'Herramientas');
 	assert.equal(json.catalog[0].unit, 'Unidad');
 	assert.ok(json.catalog[0].countedAt);
+	assert.equal(json.version, 3);
+	assert.equal(json.unmatchedArticles.length, 1);
+	assert.equal(json.unmatchedArticles[0].quantity, 1.25);
+	assert.equal(json.unmatchedArticles[0].reviewStatus, 'identified');
 	await page.getByRole('status').filter({ hasText: 'JSON listo' }).waitFor();
 	await page.getByLabel('Importar respaldo JSON', { exact: true }).setInputFiles({
 		name: 'respaldo.json',
@@ -230,6 +271,20 @@ try {
 	await page.reload({ waitUntil: 'networkidle' });
 	await nav('Inventario');
 	assert.match(await page.getByTestId('session-status').innerText(), /Sin iniciar · 0\/2401/);
+	await nav('Artículos no encontrados');
+	assert.equal(await page.getByTestId('unmatched-card').count(), 0);
+	await page
+		.getByRole('combobox', { name: 'Sesión de los hallazgos', exact: true })
+		.selectOption(json.session.id);
+	await page.getByTestId('unmatched-card').filter({ hasText: 'Pieza sin catálogo' }).waitFor();
+	assert.equal(await page.getByRole('button', { name: 'Editar', exact: true }).count(), 0);
+	assert.equal(
+		await page
+			.getByRole('button', { name: 'Exportar artículos no encontrados', exact: true })
+			.isEnabled(),
+		true
+	);
+	await nav('Inventario');
 	// Simulate a PC with a separate, empty IndexedDB, restoring the actual mobile download.
 	const pc = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 	const desktop = await pc.newPage();
@@ -262,6 +317,12 @@ try {
 		await desktop.getByRole('spinbutton', { name: 'Cantidad física' }).inputValue(),
 		'0'
 	);
+	await desktop
+		.getByRole('navigation')
+		.getByRole('button', { name: 'Artículos no encontrados', exact: true })
+		.click();
+	await desktop.getByTestId('unmatched-card').filter({ hasText: 'Pieza sin catálogo' }).waitFor();
+	assert.match(await desktop.getByTestId('unmatched-card').innerText(), /1.25/);
 	await pc.close();
 	await search.fill('ALT0');
 	await card.getByRole('button').click();
@@ -277,6 +338,9 @@ try {
 			finalizationConfirmation: true,
 			xlsxExport: true,
 			sicarExport: true,
+			unmatchedArticles: true,
+			unmatchedHistory: true,
+			unmatchedExcel: true,
 			catalogUpdatePreservesCounts: true,
 			jsonRestore: true,
 			newInventory: true,

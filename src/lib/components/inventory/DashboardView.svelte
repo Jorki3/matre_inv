@@ -32,6 +32,17 @@
 		</div>
 	</div>
 
+	<button
+		type="button"
+		class="w-full rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+		onclick={() => (app.activeView = 'unmatched')}
+	>
+		<span class="block text-sm text-zinc-500">Artículos no encontrados</span><span
+			class="mt-2 block text-3xl font-semibold">{app.unmatchedMetrics.total}</span
+		><span class="text-sm text-zinc-500"
+			>{app.unmatchedMetrics.pending} pendientes de revisar · sesión actual</span
+		>
+	</button>
 	<div
 		class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
 	>

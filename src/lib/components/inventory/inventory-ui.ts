@@ -4,6 +4,7 @@ export const navItems = [
 	{ id: 'dashboard', label: 'Inicio' },
 	{ id: 'inventory', label: 'Inventario' },
 	{ id: 'products', label: 'Productos' },
+	{ id: 'unmatched', label: 'Artículos no encontrados' },
 	{ id: 'backup', label: 'Respaldo' },
 	{ id: 'settings', label: 'Configuración' }
 ] as const;
