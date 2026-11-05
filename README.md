@@ -93,3 +93,24 @@ Para revisar desde un teléfono en tu misma red, ejecuta `bun run dev --host 0.0
 Para revisar el sitio estático con la misma ruta de GitHub Pages, compila con `BASE_PATH=/matre_inv bun run build` y ejecuta `BASE_PATH=/matre_inv bun run preview --host 0.0.0.0`. No es necesario publicar en `main` para probarlo.
 
 Con el sitio compilado en ejecución, `node scripts/mobile-smoke.mjs` verifica el flujo móvil completo con 2,401 productos en un contexto de navegador aislado. Para la ruta de Pages: `node scripts/mobile-smoke.mjs http://127.0.0.1:4173/matre_inv/`. Guarda una captura de revisión en la carpeta temporal del sistema (`/tmp/matre-mobile.png` en Linux).
+
+## Nuevo inventario y reinicio de conteos
+
+Al finalizar se muestran los resultados, la exportación Excel/JSON y **Nuevo inventario**. Esta acción crea otra sesión con un identificador nuevo, conserva todo el catálogo SICAR y deja todos los productos pendientes. No comienza automáticamente: hay que pulsar **Comenzar**.
+
+En **Configuración → Administración de datos**, **Reiniciar conteo** limpia las cantidades y fechas de conteo de la misma sesión abierta, conserva su identificador y todos los productos, claves, descripciones y existencias SICAR, y vuelve a **Sin iniciar**. Las sesiones finalizadas son de solo lectura: en ese caso se usa **Nuevo inventario**.
+
+Ambas acciones abren una confirmación móvil con **Descargar respaldo actual JSON**. Se requiere marcar la casilla de consentimiento y confirmar; cancelar no cambia datos. La sesión anterior se archiva en IndexedDB dentro de la misma transacción que guarda el cambio, sin borrar respaldos anteriores. Si falla el almacenamiento, se conservan los datos originales y se muestra el error dentro del diálogo.
+
+## Transferir el trabajo entre Android y PC
+
+1. Desde **Configuración → Respaldos** o **Respaldo**, pulsa **Exportar respaldo JSON**. También está disponible al consultar los resultados finales. El nombre será `MATRE_Inventario_AAAA-MM-DD.json`, usando la fecha del dispositivo.
+2. En Android, comprueba el archivo en Descargas y compártelo con tu PC por el medio que prefieras. El archivo puede contener datos reales: no lo agregues al repositorio ni a un PR.
+3. En la PC, abre MATRE Inventario y elige **Importar respaldo JSON**. Selecciona el archivo descargado.
+4. Revisa la vista previa: productos, contados, pendientes, fecha, versión y estado de sesión. Si ya hay datos locales, se indica cuántos serán reemplazados. Puedes descargar un respaldo de esos datos antes de continuar.
+5. Marca la confirmación y pulsa **Confirmar restauración**. Catálogo, cantidades (incluido cero), fechas, estados y datos adicionales se restauran juntos. Si la sesión estaba En curso puedes seguir contando; si estaba Pausada, pulsa Reanudar; si estaba Finalizada, se conserva bloqueada.
+6. Recarga para comprobar que el trabajo sigue disponible. Para volver a contar todo, usa **Nuevo inventario** después de finalizar o **Reiniciar conteo** en una sesión abierta.
+
+Los respaldos nuevos mantienen el formato 2 y añaden explícitamente el estado derivado de cada producto; se aceptan formatos 1 y 2. No se requiere servidor ni se implementa sincronización automática. Cada navegador/dispositivo conserva su propia base local; exportar un archivo sigue siendo necesario para recuperar el trabajo si se borra el almacenamiento del navegador.
+
+La prueba móvil `scripts/mobile-smoke.mjs` también verifica nuevo inventario, reinicio, cancelaciones, descarga previa y transferencia del JSON a otro contexto de navegador con IndexedDB vacío. Las pruebas de navegador restauran 500 conteos de un catálogo de 2,401 productos y comprueban que un fallo de almacenamiento no deja cambios parciales.

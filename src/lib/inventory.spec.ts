@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	applyPhysicalCount,
+	resetSessionCounts,
+	backupFilename,
 	countInSession,
 	createSession,
 	createInventoryExport,
@@ -162,10 +164,123 @@ describe('reliable counting and sessions', () => {
 		expect(result.value?.session.status).toBe('paused');
 		expect(old.catalog[0].countedAt).toBeUndefined();
 		const exported = createInventoryExport(result.value!.catalog, result.value!.session);
-		expect(validateBackup(exported).value?.catalog).toEqual(result.value?.catalog);
+		expect(validateBackup(exported).value?.catalog).toMatchObject(result.value!.catalog);
 		expect(validateBackup({ ...old, session: { ...old.session, status: 'invalid' } }).valid).toBe(
 			false
 		);
 		expect(validateBackup({ ...old, catalog: [{ ...product, expected: null }] }).valid).toBe(false);
+	});
+});
+
+describe('session renewal and portable backups', () => {
+	it('resets only counts and timestamps, preserving SICAR fields and session identity', () => {
+		const catalog = createSeedCatalog()
+			.slice(0, 2)
+			.map((product) => ({
+				...product,
+				alternateKey: `ALT-${product.key}`,
+				notes: 'Nota de catálogo'
+			}));
+		const active = countInSession(
+			transitionSession({ ...createSession(), products: catalog }, 'active'),
+			catalog[0].id,
+			0
+		);
+		for (const status of ['active', 'paused'] as const) {
+			const old = status === 'paused' ? transitionSession(active, 'paused') : active;
+			const reset = resetSessionCounts(old, 'reset');
+			expect(reset.id).toBe(old.id);
+			expect(reset.status).toBe('not_started');
+			expect(reset.startedAt).toBeUndefined();
+			expect(reset.finishedAt).toBeUndefined();
+			expect(reset.products).toHaveLength(2);
+			for (const [index, product] of reset.products.entries()) {
+				expect(product).toMatchObject({
+					id: catalog[index].id,
+					key: catalog[index].key,
+					alternateKey: catalog[index].alternateKey,
+					name: catalog[index].name,
+					expected: catalog[index].expected,
+					notes: 'Nota de catálogo'
+				});
+				expect(product.countedAt).toBeUndefined();
+				expect(getProductStatus(product)).toBe('pending');
+			}
+			expect(computeMetrics(reset.products)).toMatchObject({
+				counted: 0,
+				pending: 2,
+				differences: 0,
+				progress: 0
+			});
+			expect(old.products[0].countedAt).toBeTruthy();
+		}
+	});
+
+	it('opens a distinct unstarted session after completion and protects finalized sessions from reset', () => {
+		const catalog = createSeedCatalog();
+		const completed = transitionSession(
+			countInSession(
+				transitionSession({ ...createSession(), products: catalog }, 'active'),
+				catalog[0].id,
+				0
+			),
+			'completed'
+		);
+		const next = resetSessionCounts(completed, 'new');
+		expect(next.id).not.toBe(completed.id);
+		expect(next.status).toBe('not_started');
+		expect(next.startedAt).toBeUndefined();
+		expect(next.finishedAt).toBeUndefined();
+		expect(next.products.map(({ key, expected }) => ({ key, expected }))).toEqual(
+			catalog.map(({ key, expected }) => ({ key, expected }))
+		);
+		expect(completed.products[0].countedAt).toBeTruthy();
+		expect(() => resetSessionCounts(completed, 'reset')).toThrow('solo lectura');
+		expect(() => resetSessionCounts(next, 'new')).toThrow('Finaliza');
+	});
+
+	it('exports product states, zero counts, session dates and extra work in JSON', () => {
+		const catalog = createSeedCatalog().slice(0, 2);
+		const session = transitionSession(
+			countInSession(
+				transitionSession({ ...createSession(), products: catalog }, 'active'),
+				catalog[0].id,
+				0
+			),
+			'paused'
+		);
+		const movements = [
+			{
+				id: 'move-1',
+				productId: catalog[0].id,
+				productName: catalog[0].name,
+				type: 'adjustment' as const,
+				quantity: 1,
+				occurredAt: '2026-11-04T12:00:00Z'
+			}
+		];
+		const exported = JSON.parse(
+			JSON.stringify(createInventoryExport(session.products, session, movements))
+		);
+		expect(exported.catalog[0]).toMatchObject({ physical: 0, status: 'difference' });
+		expect(exported.catalog[1].status).toBe('pending');
+		const restored = validateBackup(exported).value!;
+		expect(restored.session.status).toBe('paused');
+		expect(restored.session.startedAt).toBe(session.startedAt);
+		expect(restored.catalog[0].countedAt).toBe(session.products[0].countedAt);
+		expect(restored.movements).toEqual(movements);
+		expect(backupFilename(new Date(2026, 10, 4))).toBe('MATRE_Inventario_2026-11-04.json');
+	});
+
+	it('rejects invalid versions, product structures and session structures', () => {
+		const snapshot = createInventoryExport([], createSession());
+		for (const candidate of [
+			{ ...snapshot, version: 99 },
+			{ ...snapshot, catalog: {} },
+			{ ...snapshot, session: null },
+			{ ...snapshot, exportedAt: 'invalid' },
+			{ ...snapshot, id: '' }
+		])
+			expect(validateBackup(candidate).valid).toBe(false);
 	});
 });

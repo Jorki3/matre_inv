@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { asset } from '$app/paths';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import {
 		Archive,
 		Download,
@@ -14,6 +14,8 @@
 	} from 'lucide-svelte';
 	import * as XLSX from 'xlsx';
 	import {
+		backupFilename,
+		resetSessionCounts,
 		calculateDifference,
 		computeMetrics,
 		createInventoryExport,
@@ -27,6 +29,8 @@
 		sessionLabels,
 		transitionSession,
 		validateBackup,
+		type InventorySnapshot,
+		type InventoryMovement,
 		type InventorySession,
 		type InventoryStatus,
 		type Product,
@@ -79,6 +83,23 @@
 	let loadFailed = $state(false);
 	let busy = $state(false);
 	let lastBackupAt = $state<string | null>(null);
+	let movements = $state<InventoryMovement[]>([]);
+	type DataAction = { kind: 'reset' | 'new' } | { kind: 'restore'; snapshot: InventorySnapshot };
+	let dataAction = $state<DataAction | null>(null);
+	let acknowledged = $state(false);
+	let confirmationDialog = $state<HTMLDialogElement>();
+	let cancelActionButton = $state<HTMLButtonElement>();
+	let actionError = $state('');
+	let actionTitle = $derived(
+		dataAction?.kind === 'new'
+			? 'Nuevo inventario'
+			: dataAction?.kind === 'reset'
+				? 'Reiniciar conteo'
+				: 'Importar respaldo JSON'
+	);
+	let restoreMetrics = $derived(
+		dataAction?.kind === 'restore' ? computeMetrics(dataAction.snapshot.catalog) : null
+	);
 	let headers = $state<string[]>([]);
 	let importRows = $state<CatalogRow[]>([]);
 	let mapping = $state<ColumnMapping>({ key: '', alternateKey: '', name: '', expected: '' });
@@ -114,7 +135,8 @@
 	async function commit(
 		next: InventorySession,
 		archive = false,
-		backupAt = lastBackupAt
+		backupAt = lastBackupAt,
+		nextMovements = movements
 	): Promise<boolean> {
 		if (!hydrated || busy) return false;
 		busy = true;
@@ -126,13 +148,15 @@
 					catalog: $state.snapshot(next.products),
 					lastSavedAt: new Date().toISOString(),
 					theme,
-					lastBackupAt: backupAt ?? undefined
+					lastBackupAt: backupAt ?? undefined,
+					movements: $state.snapshot(nextMovements)
 				},
 				archive
 			);
 			session = next;
 			products = next.products;
 			lastBackupAt = backupAt;
+			movements = nextMovements;
 			return true;
 		} catch (error) {
 			message = `No se guardó el cambio. Conservamos el estado anterior. ${error instanceof Error ? error.message : 'Revisa el almacenamiento del navegador.'}`;
@@ -229,19 +253,21 @@
 		}
 	}
 
-	function downloadJson(value: unknown, filename = 'matre-backup.json'): void {
+	function downloadJson(value: unknown, filename = backupFilename()): void {
 		const link = document.createElement('a');
 		link.href = URL.createObjectURL(
 			new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })
 		);
 		link.download = filename;
+		(confirmationDialog?.open ? confirmationDialog : document.body).append(link);
 		link.click();
-		setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+		link.remove();
+		setTimeout(() => URL.revokeObjectURL(link.href), 60000);
 	}
 
 	async function exportJsonBackup(): Promise<void> {
 		if (!hydrated || busy) return;
-		downloadJson(createInventoryExport(products, session));
+		downloadJson(createInventoryExport(products, session, movements));
 		if (await commit({ ...session, products }, false, new Date().toISOString()))
 			message = 'Respaldo JSON listo para descargar.';
 	}
@@ -253,7 +279,7 @@
 				message = 'No hay respaldo local previo.';
 				return;
 			}
-			downloadJson(previous, 'matre-respaldo-previo.json');
+			downloadJson(previous, backupFilename(new Date(previous.exportedAt), true));
 		} catch (error) {
 			message = `No se pudo leer el respaldo local: ${(error as Error).message}`;
 		}
@@ -267,24 +293,74 @@
 		}
 	}
 
+	async function openDataAction(action: DataAction): Promise<void> {
+		if (!hydrated || busy || dataAction) return;
+		if (action.kind === 'new' && session.status !== 'completed') return;
+		if (action.kind === 'reset' && session.status === 'completed') return;
+		actionError = '';
+		dataAction = action;
+		acknowledged = false;
+		await tick();
+		confirmationDialog?.showModal();
+		cancelActionButton?.focus();
+	}
+
+	function cancelDataAction(): void {
+		if (busy) return;
+		dataAction = null;
+		acknowledged = false;
+		confirmationDialog?.close();
+	}
+
+	async function confirmDataAction(): Promise<void> {
+		if (!dataAction || !acknowledged || busy) return;
+		const action = dataAction;
+		try {
+			const next =
+				action.kind === 'restore'
+					? action.snapshot.session
+					: resetSessionCounts({ ...session, products }, action.kind);
+			const backupAt = action.kind === 'restore' ? action.snapshot.exportedAt : lastBackupAt;
+			const nextMovements =
+				action.kind === 'restore'
+					? action.snapshot.movements
+					: action.kind === 'new'
+						? []
+						: movements;
+			if (await commit(next, true, backupAt, nextMovements)) {
+				selectedProductId = null;
+				countDraft = undefined;
+				query = '';
+				filter = 'all';
+				importRows = [];
+				importFile = '';
+				headers = [];
+				message =
+					action.kind === 'restore'
+						? 'Respaldo restaurado con sus conteos y estado de sesión.'
+						: action.kind === 'new'
+							? 'Nuevo inventario preparado. Catálogo conservado; presiona Comenzar cuando estés listo.'
+							: 'Conteos reiniciados. Catálogo conservado; sesión Sin iniciar.';
+				cancelDataAction();
+				if (action.kind !== 'restore') activeView = 'inventory';
+			} else {
+				actionError = message;
+			}
+		} catch (error) {
+			message = `No se realizó la operación: ${(error as Error).message}`;
+			actionError = message;
+		}
+	}
+
 	async function restoreBackup(event: Event): Promise<void> {
 		const input = event.target as HTMLInputElement;
 		const file = input.files?.[0];
 		input.value = '';
-		if (!file || !hydrated || busy) return;
+		if (!file || !hydrated || busy || dataAction) return;
 		try {
 			const result = validateBackup(JSON.parse(await file.text()));
 			if (!result.valid || !result.value) throw new Error(result.message);
-			if (
-				!confirm(
-					'¿Restaurar este respaldo y reemplazar el inventario actual? Se conservará una copia local previa.'
-				)
-			)
-				return;
-			if (await commit(result.value.session, true, result.value.exportedAt)) {
-				selectedProductId = null;
-				message = 'Respaldo restaurado con sus conteos y estado de sesión.';
-			}
+			await openDataAction({ kind: 'restore', snapshot: result.value });
 		} catch (error) {
 			message = `No se pudo restaurar el respaldo: ${(error as Error).message}`;
 		}
@@ -320,6 +396,7 @@
 				products = saved.catalog;
 				session = saved.session;
 				lastBackupAt = saved.lastBackupAt ?? null;
+				movements = saved.movements ?? [];
 				hydrated = true;
 				message = `Sesión: ${sessionLabels[session.status]}.`;
 			} catch (error) {
@@ -338,6 +415,123 @@
 	<meta name="theme-color" content="#B91C1C" />
 	<link rel="manifest" href={asset('manifest.webmanifest')} />
 </svelte:head>
+
+{#snippet backupActions()}
+	<div class="space-y-2">
+		<button
+			type="button"
+			class="min-h-11 w-full rounded-xl bg-red-600 px-4 py-3 text-left text-sm font-medium text-white disabled:opacity-50"
+			disabled={!hydrated || busy}
+			onclick={exportJsonBackup}>Exportar respaldo JSON</button
+		>
+		<label
+			class="flex min-h-11 w-full cursor-pointer items-center rounded-xl border border-zinc-300 px-4 py-3 text-sm dark:border-zinc-700"
+			>Importar respaldo JSON<input
+				type="file"
+				accept="application/json,.json"
+				class="sr-only"
+				onchange={restoreBackup}
+				disabled={!hydrated || busy}
+				aria-label="Importar respaldo JSON"
+			/></label
+		>
+		<button
+			type="button"
+			class="min-h-11 w-full rounded-xl border border-zinc-300 px-4 py-3 text-left text-sm dark:border-zinc-700"
+			onclick={exportPrevious}>Descargar respaldo local previo</button
+		>
+	</div>
+{/snippet}
+
+<dialog
+	bind:this={confirmationDialog}
+	aria-labelledby="data-action-title"
+	oncancel={(event) => {
+		event.preventDefault();
+		cancelDataAction();
+	}}
+	class="m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-5 text-zinc-900 shadow-xl backdrop:bg-black/60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+>
+	{#if dataAction}
+		<h2 id="data-action-title" class="text-xl font-semibold">{actionTitle}</h2>
+		{#if dataAction.kind === 'restore' && restoreMetrics}
+			<div
+				class="my-3 space-y-1 rounded-xl bg-zinc-100 p-3 text-sm dark:bg-zinc-800"
+				data-testid="backup-preview"
+			>
+				<p>
+					Productos: {restoreMetrics.total} · Contados: {restoreMetrics.counted} · Pendientes: {restoreMetrics.pending}
+				</p>
+				<p>Fecha del respaldo: {new Date(dataAction.snapshot.exportedAt).toLocaleString()}</p>
+				<p>
+					Sesión: {dataAction.snapshot.session.name} · {sessionLabels[
+						dataAction.snapshot.session.status
+					]}
+				</p>
+				<p>Formato: {dataAction.snapshot.version}</p>
+			</div>
+			<p class="mt-3 text-sm">
+				{products.length || session.startedAt
+					? `Se reemplazarán los datos locales: ${products.length} productos y ${metrics.counted} conteos.`
+					: 'No hay productos ni conteos locales. Se restaurará el trabajo del respaldo.'}
+			</p>
+		{:else}
+			<p class="mt-3 text-sm">
+				{dataAction.kind === 'new'
+					? 'Se conservará la sesión finalizada en un respaldo local y se creará una sesión distinta Sin iniciar.'
+					: 'Se limpiarán las cantidades y fechas de conteo de esta misma sesión y volverá a Sin iniciar.'}
+			</p>
+			<p class="mt-2 text-sm">
+				Se conservarán los {products.length} productos con su clave, clave alterna, descripción y existencia
+				SICAR. Se reiniciarán las estadísticas y el progreso.
+			</p>
+		{/if}
+		<p class="mt-3 text-sm text-zinc-600 dark:text-zinc-300">
+			Antes de continuar, puedes descargar el inventario actual. También guardaremos una copia local
+			previa sin borrar respaldos anteriores. El archivo JSON permite recuperarlo en otro
+			dispositivo.
+		</p>
+		<button
+			type="button"
+			class="my-3 min-h-11 w-full rounded-xl border border-zinc-300 px-3 text-sm font-medium dark:border-zinc-600"
+			disabled={busy}
+			onclick={() => downloadJson(createInventoryExport(products, session, movements))}
+			>Descargar respaldo actual JSON</button
+		>
+		<label
+			class="flex min-h-11 items-start gap-3 rounded-xl bg-zinc-100 p-3 text-sm dark:bg-zinc-800"
+			><input
+				type="checkbox"
+				bind:checked={acknowledged}
+				disabled={busy}
+				class="mt-1 h-5 w-5 shrink-0 accent-red-600"
+			/>Entiendo que los conteos actuales serán reemplazados; confirmo esta operación.</label
+		>
+		{#if actionError}<p role="alert" class="mt-3 text-sm text-red-600">{actionError}</p>{/if}
+		<div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row">
+			<button
+				bind:this={cancelActionButton}
+				type="button"
+				class="min-h-11 flex-1 rounded-xl border border-zinc-300 px-4 dark:border-zinc-600"
+				disabled={busy}
+				onclick={cancelDataAction}>Cancelar</button
+			>
+			<button
+				type="button"
+				disabled={!acknowledged || busy}
+				class="min-h-11 flex-1 rounded-xl bg-red-600 px-4 font-medium text-white disabled:opacity-50"
+				onclick={confirmDataAction}
+				>{busy
+					? 'Guardando…'
+					: dataAction.kind === 'restore'
+						? 'Confirmar restauración'
+						: dataAction.kind === 'new'
+							? 'Crear nuevo inventario'
+							: 'Confirmar reinicio'}</button
+			>
+		</div>
+	{/if}
+</dialog>
 
 <div
 	class="min-h-screen bg-zinc-50 text-zinc-900 transition-colors dark:bg-zinc-950 dark:text-zinc-50"
@@ -542,6 +736,24 @@
 								disabled={busy}
 								onclick={() => cycleSession('paused')}>Pausar</button
 							>{/if}
+						{#if session.status === 'completed'}
+							<button
+								type="button"
+								disabled={!hydrated || busy}
+								class="min-h-11 rounded-xl bg-red-600 px-4 text-sm font-medium text-white disabled:opacity-50"
+								onclick={() => openDataAction({ kind: 'new' })}>Nuevo inventario</button
+							>
+							<button
+								type="button"
+								class="min-h-11 rounded-xl border border-zinc-300 px-3 text-sm dark:border-zinc-700"
+								onclick={exportExcel}>Exportar Excel</button
+							>
+							<button
+								type="button"
+								class="min-h-11 rounded-xl border border-zinc-300 px-3 text-sm dark:border-zinc-700"
+								onclick={exportJsonBackup}>Exportar respaldo JSON</button
+							>
+						{/if}
 						{#if session.status === 'active' || session.status === 'paused'}<button
 								class="min-h-11 rounded-xl border border-zinc-300 px-3 text-sm dark:border-zinc-700"
 								disabled={busy}
@@ -831,33 +1043,7 @@
 						class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
 					>
 						<h2 class="mb-3 text-xl font-semibold">Respaldos</h2>
-						<div class="space-y-3 text-sm">
-							<button
-								type="button"
-								class="flex w-full items-center justify-between rounded-xl bg-red-600 px-4 py-3 text-white"
-								onclick={exportJsonBackup}
-							>
-								<span class="flex items-center gap-2"><Archive size={16} /> Exportar respaldo</span>
-								<Download size={16} />
-							</button>
-							<button
-								class="min-h-11 w-full rounded-xl border border-zinc-300 px-4 dark:border-zinc-700"
-								onclick={exportPrevious}>Descargar respaldo local previo</button
-							>
-							<label
-								class="flex w-full cursor-pointer items-center justify-between rounded-xl border border-zinc-200 bg-zinc-100 px-4 py-3 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-							>
-								<span class="flex items-center gap-2"><Upload size={16} /> Importar respaldo</span>
-								<input
-									type="file"
-									accept="application/json,.json"
-									class="hidden"
-									onchange={restoreBackup}
-									disabled={!hydrated || busy}
-									aria-label="Importar respaldo"
-								/>
-							</label>
-						</div>
+						{@render backupActions()}
 					</div>
 
 					<div
@@ -879,6 +1065,42 @@
 			</section>
 		{:else}
 			<section class="space-y-6">
+				<div class="grid gap-4 lg:grid-cols-2">
+					<section
+						class="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+						aria-labelledby="data-admin-heading"
+					>
+						<h2 id="data-admin-heading" class="text-xl font-semibold">Administración de datos</h2>
+						<p class="text-sm text-zinc-500">
+							Reiniciar conteo limpia la sesión actual. Nuevo inventario abre otra sesión después de
+							finalizar. Ambas acciones conservan el catálogo.
+						</p>
+						<button
+							type="button"
+							disabled={!hydrated || busy || session.status === 'completed'}
+							class="min-h-11 w-full rounded-xl border border-red-600 px-4 text-left text-sm font-medium text-red-600 disabled:opacity-50"
+							onclick={() => openDataAction({ kind: 'reset' })}>Reiniciar conteo</button
+						>
+						{#if session.status === 'completed'}<button
+								type="button"
+								disabled={busy}
+								class="min-h-11 w-full rounded-xl bg-red-600 px-4 text-left text-sm font-medium text-white"
+								onclick={() => openDataAction({ kind: 'new' })}>Nuevo inventario</button
+							>
+							<p class="text-sm text-zinc-500">
+								La sesión finalizada es de solo lectura; prepara un nuevo inventario para volver a
+								contar.
+							</p>{/if}
+					</section>
+					<section
+						class="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+						aria-labelledby="settings-backup-heading"
+					>
+						<h2 id="settings-backup-heading" class="text-xl font-semibold">Respaldos</h2>
+						{@render backupActions()}
+					</section>
+				</div>
+
 				<div class="grid gap-4 lg:grid-cols-2">
 					<div
 						class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"

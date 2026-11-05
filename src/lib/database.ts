@@ -3,6 +3,7 @@ import {
 	createSession,
 	createInventoryExport,
 	migrateInventory,
+	type InventoryMovement,
 	type InventorySession,
 	type InventorySnapshot,
 	type Product,
@@ -16,6 +17,7 @@ export interface StoredInventoryState {
 	lastSavedAt: string;
 	theme: ThemeMode;
 	lastBackupAt?: string;
+	movements?: InventoryMovement[];
 }
 
 class InventoryDatabase extends Dexie {
@@ -70,7 +72,7 @@ export async function saveInventoryState(
 			const previous = await db.state.get('main');
 			if (previous)
 				await db.backups.put({
-					...createInventoryExport(previous.catalog, previous.session),
+					...createInventoryExport(previous.catalog, previous.session, previous.movements),
 					session: previous.session
 				});
 		}
