@@ -31,15 +31,42 @@ try {
 	await page.getByRole('button', { name: 'Comenzar', exact: true }).waitFor();
 	assert.match(await page.getByTestId('session-status').innerText(), /Sin iniciar/);
 	await nav('Productos');
-	const csv =
-		'Clave,Clave alterna,Descripción,Existencia SICAR\n' +
-		Array.from(
-			{ length: 2401 },
-			(_, i) => `K${String(i).padStart(5, '0')},ALT${i},Producto ${i},20`
-		).join('\n');
+	const catalogHeaders = [
+		'Clave',
+		'Clave alterna',
+		'Producto',
+		'Existencia actual',
+		'Departamento',
+		'Unidad de medida'
+	];
+	const catalogFile = (rows) => {
+		const workbook = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(
+			workbook,
+			XLSX.utils.aoa_to_sheet([catalogHeaders, ...rows]),
+			'Catálogo'
+		);
+		return {
+			name: 'catalogo.xlsx',
+			mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+			buffer: XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
+		};
+	};
 	await page
 		.getByLabel('Importar catálogo', { exact: true })
-		.setInputFiles({ name: 'catalogo.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+		.setInputFiles(
+			catalogFile(
+				Array.from({ length: 2401 }, (_, index) => [
+					`K${String(index).padStart(5, '0')}`,
+					`ALT${index}`,
+					`Producto ${index}`,
+					20,
+					'Ferretería',
+					'Pieza'
+				])
+			)
+		);
+
 	await page.getByTestId('import-summary').filter({ hasText: '2401 válidos' }).waitFor();
 	await page.getByRole('button', { name: 'Confirmar importación', exact: true }).click();
 	await page.getByRole('status').filter({ hasText: '2401 productos importados' }).waitFor();
@@ -53,6 +80,27 @@ try {
 	await page.getByRole('button', { name: 'Guardar cantidad', exact: true }).click();
 	await page.getByRole('status').filter({ hasText: '0 unidades guardadas' }).waitFor();
 	assert.equal(await search.inputValue(), 'ALT0');
+	await nav('Productos');
+	await page
+		.getByLabel('Importar catálogo', { exact: true })
+		.setInputFiles(
+			catalogFile([['K00000', 'ALT0', 'Producto 0 actualizado', 20, 'Herramientas', 'Unidad']])
+		);
+	await page.getByRole('combobox', { name: 'Destino del catálogo' }).selectOption('update');
+	await page.getByTestId('import-summary').filter({ hasText: '1 válidos' }).waitFor();
+	page.once('dialog', (dialog) => {
+		assert.match(dialog.message(), /sesión de inventario abierta/);
+		return dialog.accept();
+	});
+	await page.getByRole('button', { name: 'Confirmar importación', exact: true }).click();
+	await page
+		.getByRole('status')
+		.filter({ hasText: '0 productos nuevos y 1 actualizados. Conteos conservados.' })
+		.waitFor();
+	await nav('Inventario');
+	await card.getByRole('button').click();
+	assert.equal(await page.getByRole('spinbutton', { name: 'Cantidad física' }).inputValue(), '0');
+	assert.match(await card.innerText(), /Producto 0 actualizado/);
 	await page.getByRole('button', { name: 'Contados', exact: true }).click();
 	assert.equal(await card.count(), 1);
 	assert.match(await card.innerText(), /Con diferencia/);
@@ -87,6 +135,24 @@ try {
 	assert.equal(rows[0].Diferencia, -20);
 	assert.equal(rows[1]['Cantidad física'], null);
 	assert.equal(rows[1].Diferencia, null);
+	// The SICAR-specific download is independent from the full inventory report.
+	page.once('dialog', (dialog) => dialog.dismiss());
+	await page.getByRole('button', { name: 'Exportar para SICAR', exact: true }).click();
+	const sicarDownload = page.waitForEvent('download');
+	page.once('dialog', (dialog) => {
+		assert.match(dialog.message(), /2400 productos pendientes/);
+		return dialog.accept();
+	});
+	await page.getByRole('button', { name: 'Exportar para SICAR', exact: true }).click();
+	const sicar = await sicarDownload;
+	const sicarBook = XLSX.read(await fs.readFile(await sicar.path()), { type: 'buffer' });
+	assert.deepEqual(
+		XLSX.utils.sheet_to_json(sicarBook.Sheets[sicarBook.SheetNames[0]], { header: 1 }),
+		[
+			['Clave', 'Cantidad'],
+			['K00000', 0]
+		]
+	);
 	await nav('Respaldo');
 	const jsonDownload = page.waitForEvent('download');
 	await page.getByRole('button', { name: 'Exportar respaldo JSON', exact: true }).click();
@@ -96,6 +162,8 @@ try {
 	assert.equal(json.session.status, 'completed');
 	assert.ok(json.session.finishedAt);
 	assert.equal(json.catalog[0].physical, 0);
+	assert.equal(json.catalog[0].category, 'Herramientas');
+	assert.equal(json.catalog[0].unit, 'Unidad');
 	assert.ok(json.catalog[0].countedAt);
 	await page.getByRole('status').filter({ hasText: 'JSON listo' }).waitFor();
 	await page.getByLabel('Importar respaldo JSON', { exact: true }).setInputFiles({
@@ -208,6 +276,8 @@ try {
 			sessionPersistence: true,
 			finalizationConfirmation: true,
 			xlsxExport: true,
+			sicarExport: true,
+			catalogUpdatePreservesCounts: true,
 			jsonRestore: true,
 			newInventory: true,
 			resetCount: true,

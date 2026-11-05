@@ -124,3 +124,21 @@ La prueba móvil `scripts/mobile-smoke.mjs` también verifica nuevo inventario, 
 - `BackupActions`, `DataActionDialog`, `StorageRecovery`, `AppHeader`, `AppNavigation` y `AppStatus` contienen la interfaz compartida.
 - `inventory-controller.svelte.ts` crea el estado reactivo por instancia y centraliza las acciones de persistencia, sesiones, importación y exportación. Las vistas reciben ese controlador; el diálogo gestiona su propio comportamiento de DOM.
 - `inventory-ui.ts` define las opciones de navegación, filtros y tipos de las acciones de confirmación. Las reglas del inventario y el acceso a IndexedDB permanecen en `src/lib/inventory.ts` y `src/lib/database.ts`.
+
+## Catálogo SICAR: actualización y exportación de conteos
+
+La importación reconoce equivalentes de **Clave**, **Clave alterna**, **Producto / Descripción**, **Existencia actual**, **Categoría / Departamento** y **Unidad de medida**, sin distinguir mayúsculas, acentos o espacios. Categoría y unidad son opcionales; se conservan en IndexedDB y JSON y pueden consultarse al expandir la tarjeta. La clave alterna sigue siendo un identificador del mismo producto: no genera otro artículo y no se detectan automáticamente columnas de código de barras como clave alterna. Los respaldos antiguos mantienen su migración compatible.
+
+En **Productos → Importar catálogo**, revisa las asignaciones detectadas y corrígelas manualmente si hace falta. Los encabezados varían entre versiones de SICAR; se usa la primera hoja y la primera fila como encabezados. La vista previa muestra nuevos, actualizaciones, duplicados y errores antes de guardar. Se han probado archivos XLS y XLSX con 2,401 productos.
+
+Hay tres modos:
+
+- **Agregar solo claves nuevas:** omite claves ya presentes y no altera sus datos ni conteos.
+- **Actualizar catálogo conservando conteos:** actualiza descripción, existencia SICAR y campos opcionales asignados para las claves coincidentes; conserva identificador, cantidad física, fecha de conteo, notas y datos comerciales. Agrega claves nuevas y mantiene los productos ausentes del archivo. Si un campo opcional no está asignado se conserva el valor anterior; si está asignado y vacío se limpia. Cambiar la existencia SICAR recalcula las diferencias, sin cambiar la cantidad física.
+- **Reemplazar catálogo y conteos:** requiere confirmación y deja pendientes los productos del archivo. Es el modo requerido para sustituir un catálogo de demostración sin mezclarlo con productos reales.
+
+Una sesión abierta muestra advertencia y pide confirmación antes de importar. Actualizar claves existentes también exige confirmación. Cuando ya hay productos se conserva una copia local previa en la misma transacción de IndexedDB. Una sesión finalizada sigue bloqueando cambios en su catálogo.
+
+**Exportar para SICAR** es una descarga independiente del reporte Excel general. Produce un `.xlsx` con únicamente las columnas **Clave** (principal, como texto) y **Cantidad** (física, numérica). Solo incluye productos con marca de conteo, incluidos los ceros registrados. Los pendientes se excluyen y, si existen, se advierte y solicita confirmación antes de descargar. Sin conteos registrados, la acción permanece deshabilitada.
+
+Este archivo es un formato provisional de intercambio: **no se ha validado contra una plantilla real de importación de SICAR y no garantiza que cualquier versión de SICAR lo acepte**. La estructura se concentra en `src/lib/sicar-export.ts` para ajustarla al recibir esa plantilla. La aplicación no envía archivos ni modifica existencias en SICAR.

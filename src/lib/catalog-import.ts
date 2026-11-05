@@ -1,23 +1,44 @@
 import * as XLSX from 'xlsx';
-import { createId, normalizeText, type Product } from './inventory';
+import { createId, getProductStatus, normalizeText, type Product } from './inventory';
 
-export type ColumnMapping = Record<'key' | 'alternateKey' | 'name' | 'expected', string>;
+export type ColumnMapping = Record<'key' | 'alternateKey' | 'name' | 'expected', string> &
+	Partial<Record<'category' | 'unit', string>>;
+export type CatalogImportMode = 'append' | 'update' | 'replace';
 export type CatalogRow = unknown[];
 export const importFields = [
 	{ id: 'key', label: 'Clave (obligatoria)' },
 	{ id: 'alternateKey', label: 'Clave alterna (opcional)' },
 	{ id: 'name', label: 'Descripción (obligatoria)' },
-	{ id: 'expected', label: 'Existencia SICAR (obligatoria)' }
+	{ id: 'expected', label: 'Existencia actual / SICAR (obligatoria)' },
+	{ id: 'category', label: 'Categoría / Departamento (opcional)' },
+	{ id: 'unit', label: 'Unidad de medida (opcional)' }
 ] as const;
 
 const normalizeHeader = (value: unknown) =>
 	normalizeText(String(value ?? '')).replace(/[^a-z0-9]/g, '');
 // Generic aliases, not a validated official SICAR template.
 const aliases = {
-	key: ['clave', 'claveinterna', 'sku', 'internalkey'],
-	alternateKey: ['clavealterna', 'codigoalterno', 'codigobarras', 'barcode', 'ean', 'ean13'],
-	name: ['descripcion', 'descripcionproducto', 'producto', 'nombre', 'productname'],
-	expected: ['existencia', 'existenciasicar', 'stock', 'quantity']
+	key: ['clave', 'claveprincipal', 'claveinterna', 'sku', 'internalkey'],
+	alternateKey: ['clavealterna', 'clavealternativa', 'codigoalterno'],
+	name: [
+		'descripcion',
+		'descripcionproducto',
+		'producto',
+		'nombre',
+		'productname',
+		'productodescripcion'
+	],
+	expected: [
+		'existenciaactual',
+		'existenciasactuales',
+		'existenciaactualsicar',
+		'existencia',
+		'existenciasicar',
+		'stock',
+		'quantity'
+	],
+	category: ['categoria', 'departamento', 'categoriadepartamento'],
+	unit: ['unidaddemedida', 'unidadmedida', 'unidad', 'umedida']
 };
 
 export function readCatalogFile(data: ArrayBuffer, filename: string) {
@@ -59,20 +80,36 @@ export function detectColumns(headers: unknown[]): ColumnMapping {
 	) as ColumnMapping;
 }
 
-export function previewCatalog(rows: CatalogRow[], mapping: ColumnMapping, existing: Product[]) {
+export function previewCatalog(
+	rows: CatalogRow[],
+	mapping: ColumnMapping,
+	existing: Product[],
+	mode: CatalogImportMode = 'append'
+) {
 	const products: Product[] = [];
 	const errors: { row: number; message: string }[] = [];
 	const duplicates: { row: number; key: string }[] = [];
-	const seen = new Set(existing.map((product) => normalizeText(product.key)));
+	const existingKeys = new Set(existing.map((product) => normalizeText(product.key)));
+	const seen = new Set<string>();
+	let updates = 0;
 	const required = [mapping.key, mapping.name, mapping.expected];
-	const assigned = Object.values(mapping).filter((column) => column !== '');
+	const assigned = Object.values(mapping).filter((column) => column !== '' && column !== undefined);
 	const mappingValid =
 		required.every((column) => /^\d+$/.test(column)) && new Set(assigned).size === assigned.length;
-	if (!mappingValid) return { products, errors, duplicates, mappingValid, total: rows.length };
+	if (!mappingValid)
+		return {
+			products,
+			errors,
+			duplicates,
+			mappingValid,
+			total: rows.length,
+			updates,
+			additions: products.length - updates
+		};
 	rows.forEach((row, index) => {
 		if (row.every((cell) => cell === '' || cell === null || cell === undefined)) return;
-		const cell = (column: string, numeric = false): unknown => {
-			const value = column === '' ? '' : row[Number(column)];
+		const cell = (column: string | undefined, numeric = false): unknown => {
+			const value = column === '' || column === undefined ? '' : row[Number(column)];
 			if (value && typeof value === 'object' && 'raw' in value && 'text' in value)
 				return numeric ? value.raw : value.text;
 			return value;
@@ -93,15 +130,23 @@ export function previewCatalog(rows: CatalogRow[], mapping: ColumnMapping, exist
 			});
 			return;
 		}
-		if (seen.has(normalizeText(key))) {
+		if (
+			seen.has(normalizeText(key)) ||
+			(mode === 'append' && existingKeys.has(normalizeText(key)))
+		) {
 			duplicates.push({ row: index + 2, key });
 			return;
 		}
 		seen.add(normalizeText(key));
+		if (mode === 'update' && existingKeys.has(normalizeText(key))) updates++;
 		products.push({
 			id: createId('product'),
 			key,
-			alternateKey: String(cell(mapping.alternateKey) ?? '').trim(),
+			...(mapping.alternateKey
+				? { alternateKey: String(cell(mapping.alternateKey) ?? '').trim() }
+				: {}),
+			...(mapping.category ? { category: String(cell(mapping.category) ?? '').trim() } : {}),
+			...(mapping.unit ? { unit: String(cell(mapping.unit) ?? '').trim() } : {}),
 			name,
 			expected,
 			physical: 0,
@@ -109,22 +154,49 @@ export function previewCatalog(rows: CatalogRow[], mapping: ColumnMapping, exist
 			source: 'importado'
 		});
 	});
-	return { products, errors, duplicates, mappingValid, total: rows.length };
+	return {
+		products,
+		errors,
+		duplicates,
+		mappingValid,
+		total: rows.length,
+		updates,
+		additions: products.length - updates
+	};
 }
 
 export function mergeCatalog(
 	existing: Product[],
 	imported: Product[],
-	mode: 'append' | 'replace',
+	mode: CatalogImportMode,
 	confirmed = false
 ): Product[] {
 	if (mode === 'replace' && existing.length && !confirmed)
 		throw new Error('Confirma el reemplazo antes de importar.');
-	const result = mode === 'append' ? [...existing] : [];
-	const seen = new Set(result.map((product) => normalizeText(product.key)));
+	const result = mode === 'replace' ? [] : [...existing];
+	const positions = new Map(result.map((product, index) => [normalizeText(product.key), index]));
+	const seen = new Set<string>();
 	for (const product of imported) {
-		if (seen.has(normalizeText(product.key))) continue;
-		seen.add(normalizeText(product.key));
+		const key = normalizeText(product.key);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		const position = positions.get(key);
+		if (position !== undefined) {
+			if (mode === 'update') {
+				const current = result[position];
+				const updated = {
+					...current,
+					name: product.name,
+					expected: product.expected,
+					...(product.alternateKey !== undefined ? { alternateKey: product.alternateKey } : {}),
+					...(product.category !== undefined ? { category: product.category } : {}),
+					...(product.unit !== undefined ? { unit: product.unit } : {})
+				};
+				result[position] = { ...updated, status: getProductStatus(updated) };
+			}
+			continue;
+		}
+		positions.set(key, result.length);
 		result.push(product);
 	}
 	return result;

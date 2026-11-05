@@ -28,7 +28,8 @@ import {
 	previewCatalog,
 	readCatalogFile,
 	type CatalogRow,
-	type ColumnMapping
+	type ColumnMapping,
+	type CatalogImportMode
 } from '$lib/catalog-import';
 import {
 	applyTheme,
@@ -39,6 +40,7 @@ import {
 	readStoredTheme,
 	saveInventoryState
 } from '$lib/database';
+import { createSicarExport, SICAR_EXPORT_LAYOUT } from '$lib/sicar-export';
 import { navItems, filters, type DataAction } from './inventory-ui';
 
 /** One reactive controller per mounted application; never shared across users or SSR requests. */
@@ -73,15 +75,13 @@ export function createInventoryController() {
 	let headers = $state<string[]>([]);
 	let importRows = $state<CatalogRow[]>([]);
 	let mapping = $state<ColumnMapping>({ key: '', alternateKey: '', name: '', expected: '' });
-	let importMode = $state<'append' | 'replace'>('append');
+	let importMode = $state<CatalogImportMode>('append');
 	let importFile = $state('');
 	const metrics = $derived(computeMetrics(products));
 	const achievements = $derived(getAchievementProgress(products));
 	const visibleProducts = $derived(searchProducts(products, query, filter));
 	const canCount = $derived(hydrated && !busy && session.status === 'active');
-	const preview = $derived(
-		previewCatalog(importRows, mapping, importMode === 'append' ? products : [])
-	);
+	const preview = $derived(previewCatalog(importRows, mapping, products, importMode));
 	const demoIdentities = createSeedCatalog().map((seed) => `${seed.id}|${seed.key}|${seed.name}`);
 	const hasDemo = $derived(
 		products.some(
@@ -192,7 +192,7 @@ export function createInventoryController() {
 			!batch.products.length
 		)
 			return;
-		if (importMode === 'append' && hasDemo) {
+		if (importMode !== 'replace' && hasDemo) {
 			message = 'Reemplaza el catálogo de demostración para no mezclarlo con productos reales.';
 			return;
 		}
@@ -204,20 +204,60 @@ export function createInventoryController() {
 		)
 			return;
 		const replacing = importMode === 'replace' && products.length > 0;
-		if (
-			replacing &&
-			!confirm(
-				`¿Reemplazar ${products.length} productos y sus conteos por ${batch.products.length} productos pendientes? Se guardará un respaldo local previo. Exporta también un JSON para conservarlo fuera de este dispositivo.`
-			)
-		)
-			return;
+		const ongoing = session.status === 'active' || session.status === 'paused';
+		const updating = importMode === 'update' && batch.updates > 0;
+		if (ongoing || replacing || updating) {
+			const warning = [
+				ongoing ? 'Hay una sesión de inventario abierta.' : '',
+				replacing
+					? `Se reemplazarán ${products.length} productos y sus conteos por ${batch.products.length} productos pendientes.`
+					: updating
+						? `Se actualizarán ${batch.updates} claves existentes y se agregarán ${batch.additions} productos. Se conservarán las cantidades físicas, fechas de conteo y productos ausentes del archivo. Las diferencias pueden cambiar al actualizar existencias SICAR.`
+						: 'Se agregarán solo claves nuevas; se conservarán todos los conteos.',
+				'Se guardará un respaldo local previo. ¿Confirmar importación?'
+			]
+				.filter(Boolean)
+				.join(' ');
+			if (!confirm(warning)) return;
+		}
 		const nextProducts = mergeCatalog(products, batch.products, importMode, replacing);
-		if (await commit({ ...session, products: nextProducts }, replacing)) {
-			message = `${batch.products.length} productos importados. ${batch.duplicates.length} duplicados omitidos.`;
+		if (await commit({ ...session, products: nextProducts }, products.length > 0)) {
+			message =
+				importMode === 'update'
+					? `${batch.additions} productos nuevos y ${batch.updates} actualizados. Conteos conservados. ${batch.duplicates.length} duplicados omitidos.`
+					: `${batch.products.length} productos importados. ${batch.duplicates.length} duplicados omitidos.`;
 			importRows = [];
 			headers = [];
 			importFile = '';
 			selectedProductId = null;
+		}
+	}
+
+	function exportForSicar(): void {
+		if (!hydrated || busy) return;
+		try {
+			const rows = createSicarExport(products);
+			if (!rows.length) {
+				message = 'No hay conteos registrados para exportar a SICAR.';
+				return;
+			}
+			if (
+				metrics.pending &&
+				!confirm(
+					`Quedan ${metrics.pending} productos pendientes. Solo se exportarán ${rows.length} productos contados, incluidos los ceros registrados. ¿Continuar?`
+				)
+			)
+				return;
+			const workbook = XLSX.utils.book_new();
+			XLSX.utils.book_append_sheet(
+				workbook,
+				XLSX.utils.json_to_sheet(rows, { header: [...SICAR_EXPORT_LAYOUT.columns] }),
+				SICAR_EXPORT_LAYOUT.sheet
+			);
+			XLSX.writeFile(workbook, SICAR_EXPORT_LAYOUT.filename);
+			message = `${rows.length} conteos exportados. Formato provisional Clave/Cantidad: valida la plantilla antes de usarlo en SICAR.`;
+		} catch (error) {
+			message = `No se pudo exportar para SICAR: ${(error as Error).message}`;
 		}
 	}
 
@@ -491,7 +531,7 @@ export function createInventoryController() {
 		get importMode() {
 			return importMode;
 		},
-		set importMode(value: 'append' | 'replace') {
+		set importMode(value: CatalogImportMode) {
 			importMode = value;
 		},
 		setMappingColumn,
@@ -510,6 +550,7 @@ export function createInventoryController() {
 		confirmDataAction,
 		restoreBackup,
 		exportExcel,
+		exportForSicar,
 		setTheme
 	};
 }
