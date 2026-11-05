@@ -29,17 +29,23 @@
 		<AppHeader {app} />
 		<StorageRecovery {app} />
 		<AppNavigation {app} />
+
 		{#if app.activeView === 'dashboard'}
 			<DashboardView {app} />
-		{:else if app.activeView === 'inventory'}
+		{/if}
+		{#if app.activeView === 'inventory'}
 			<InventoryView {app} />
-		{:else if app.activeView === 'products'}
+		{/if}
+		{#if app.activeView === 'products'}
 			<CatalogView {app} />
-		{:else if app.activeView === 'backup'}
+		{/if}
+		{#if app.activeView === 'backup'}
 			<BackupView {app} />
-		{:else}
+		{/if}
+		{#if app.activeView === 'settings'}
 			<SettingsView {app} />
 		{/if}
+
 		<AppStatus {app} />
 	</div>
 </div>
