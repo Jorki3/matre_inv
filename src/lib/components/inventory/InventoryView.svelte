@@ -1,0 +1,29 @@
+<script lang="ts">
+	import type { InventoryController } from './inventory-controller.svelte';
+	import SessionControls from './SessionControls.svelte';
+	import ProductSearch from './ProductSearch.svelte';
+	import ProductCard from './ProductCard.svelte';
+
+	let { app }: { app: InventoryController } = $props();
+</script>
+
+<section class="space-y-3" aria-label="Conteo de inventario">
+	<SessionControls {app} />
+	<ProductSearch {app} />
+	<p class="text-sm text-zinc-500">
+		{app.visibleProducts.length} productos · {app.canCount
+			? 'Toca una tarjeta para capturar.'
+			: app.session.status === 'completed'
+				? 'Sesión finalizada: solo consulta y exportación.'
+				: 'Captura bloqueada: comienza o reanuda la sesión para contar.'}
+	</p>
+	<div class="space-y-2">
+		{#each app.visibleProducts as product (product.id)}
+			<ProductCard {app} {product} />
+		{:else}<p class="rounded-xl border border-zinc-200 p-4 text-sm dark:border-zinc-800">
+				{app.products.length
+					? 'No hay productos que coincidan.'
+					: 'Importa tu catálogo desde Productos. No se cargan artículos de demostración.'}
+			</p>{/each}
+	</div>
+</section>
