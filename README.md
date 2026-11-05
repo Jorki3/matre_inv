@@ -114,3 +114,13 @@ Ambas acciones abren una confirmación móvil con **Descargar respaldo actual JS
 Los respaldos nuevos mantienen el formato 2 y añaden explícitamente el estado derivado de cada producto; se aceptan formatos 1 y 2. No se requiere servidor ni se implementa sincronización automática. Cada navegador/dispositivo conserva su propia base local; exportar un archivo sigue siendo necesario para recuperar el trabajo si se borra el almacenamiento del navegador.
 
 La prueba móvil `scripts/mobile-smoke.mjs` también verifica nuevo inventario, reinicio, cancelaciones, descarga previa y transferencia del JSON a otro contexto de navegador con IndexedDB vacío. Las pruebas de navegador restauran 500 conteos de un catálogo de 2,401 productos y comprueban que un fallo de almacenamiento no deja cambios parciales.
+
+## Organización de la interfaz
+
+`src/routes/+page.svelte` solo monta `InventoryApp`. En `src/lib/components/inventory/`, `InventoryApp.svelte` reúne la navegación, las vistas y los elementos compartidos:
+
+- `DashboardView`, `InventoryView`, `CatalogView`, `BackupView` y `SettingsView` representan cada pantalla.
+- `SessionControls`, `ProductSearch`, `ProductCard` y `CatalogImportPreview` separan el conteo y la importación.
+- `BackupActions`, `DataActionDialog`, `StorageRecovery`, `AppHeader`, `AppNavigation` y `AppStatus` contienen la interfaz compartida.
+- `inventory-controller.svelte.ts` crea el estado reactivo por instancia y centraliza las acciones de persistencia, sesiones, importación y exportación. Las vistas reciben ese controlador; el diálogo gestiona su propio comportamiento de DOM.
+- `inventory-ui.ts` define las opciones de navegación, filtros y tipos de las acciones de confirmación. Las reglas del inventario y el acceso a IndexedDB permanecen en `src/lib/inventory.ts` y `src/lib/database.ts`.
