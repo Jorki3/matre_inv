@@ -2,6 +2,12 @@
 
 Todos los cambios notables de la app. Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [0.7.1] - 2026-11-08
+
+### Mejorado
+- Al tocar el micrófono junto a la búsqueda, el dictado empieza a escuchar de inmediato, sin segundo tap en el botón grande (que queda para detener o reintentar). Si el permiso de micrófono se niega, avisa en español y no reintenta en bucle.
+- Al tocar el código de barras junto a la búsqueda, la cámara se abre de inmediato, sin segundo tap en el botón de escanear (que queda como reintento manual si la cámara falla). Si el permiso de cámara se niega, avisa en español.
+
 ## [0.7.0] - 2026-11-08
 
 ### Añadido
