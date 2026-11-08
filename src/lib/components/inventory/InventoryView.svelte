@@ -3,6 +3,7 @@
 	import SessionControls from './SessionControls.svelte';
 	import ProductSearch from './ProductSearch.svelte';
 	import VoiceCount from './VoiceCount.svelte';
+	import BarcodeScan from './BarcodeScan.svelte';
 	import ProductCard from './ProductCard.svelte';
 
 	let { app }: { app: InventoryController } = $props();
@@ -12,6 +13,7 @@
 	<SessionControls {app} />
 	<ProductSearch {app} />
 	<VoiceCount {app} />
+	<BarcodeScan {app} />
 	{#if app.visibleProducts.length || !app.query.trim()}<button
 			type="button"
 			disabled={!app.canCount}
