@@ -229,7 +229,7 @@
 			{#if !foundProduct && !filterExcludedProduct}
 				<UnmatchedForm
 					bind:location={unmatchedLocation}
-					note="Queda como Pendiente de revisar, con el código guardado para identificarlo después. No suma al avance ni modifica el catálogo SICAR."
+					note="Queda como Pendiente de revisar, con el código guardado para identificarlo después. No suma al avance ni modifica el catálogo."
 					registerDisabled={quantityDraft === undefined || !app.canCount}
 					onRegister={() => void registerUnmatched()}
 				/>

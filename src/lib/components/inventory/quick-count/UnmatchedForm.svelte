@@ -2,7 +2,7 @@
 	/** Registro de artículo no encontrado (Pendiente de revisar). */
 	let {
 		location = $bindable(''),
-		note = 'Queda como Pendiente de revisar, separado del conteo oficial. No suma al avance ni modifica el catálogo SICAR.',
+		note = 'Queda como Pendiente de revisar, separado del conteo oficial. No suma al avance ni modifica el catálogo.',
 		registerDisabled = false,
 		onRegister
 	}: {

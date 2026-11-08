@@ -45,7 +45,7 @@
 				mezclarlos con tu catálogo real.
 			</p>{/if}
 		{#if !app.preview.mappingValid}<p class="text-sm text-red-600">
-				Asigna Clave, Descripción y Existencia SICAR a columnas diferentes.
+				Asigna Clave, Descripción y Existencia a columnas diferentes.
 			</p>{/if}
 		{#if app.session.status === 'active' || app.session.status === 'paused'}<p
 				role="note"
@@ -54,7 +54,7 @@
 				Hay una sesión abierta. Confirma cómo se aplicará el catálogo antes de importar.
 			</p>{/if}
 		{#if app.importMode === 'update'}<p class="text-sm text-zinc-500">
-				Se actualizan descripción y existencia SICAR por clave; se conservan cantidades, fechas y
+				Se actualizan descripción y existencia por clave; se conservan cantidades, fechas y
 				productos ausentes del archivo. Los campos opcionales sin asignar conservan sus datos
 				actuales. Las diferencias se recalculan con la nueva existencia.
 			</p>{/if}

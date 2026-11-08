@@ -8,7 +8,7 @@ import {
 	validateBackup,
 	resetSessionCounts
 } from './inventory';
-import { createSicarExport } from './sicar-export';
+import { createCountsExport } from './counts-export';
 import {
 	saveUnmatchedArticle,
 	removeUnmatchedArticle,
@@ -96,7 +96,7 @@ describe('unmatched articles', () => {
 		).toHaveLength(2);
 	});
 
-	it('edits and changes review status, links the main SICAR key and never alters official progress or exports', () => {
+	it('edits and changes review status, links the main catalog key and never alters official progress or exports', () => {
 		const session = activeSession();
 		const before = JSON.stringify(session.products);
 		const metrics = computeMetrics(session.products);
@@ -141,11 +141,11 @@ describe('unmatched articles', () => {
 		expect(items[0].linkedProductKey).toBe(session.products[0].key);
 		expect(JSON.stringify(session.products)).toBe(before);
 		expect(computeMetrics(session.products)).toEqual(metrics);
-		expect(createSicarExport(session.products)).toEqual([]);
+		expect(createCountsExport(session.products)).toEqual([]);
 		expect(unmatchedExportRows(items)[0]).toMatchObject({
 			'Cantidad física encontrada': 1.25,
-			'Estado de revisión': 'Identificado en SICAR',
-			'Clave SICAR relacionada': session.products[0].key
+			'Estado de revisión': 'Identificado en catálogo',
+			'Clave relacionada': session.products[0].key
 		});
 	});
 

@@ -43,7 +43,7 @@
 			<div class="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
 				{#if product.category}<span>Categoría: {product.category}</span>{/if}
 				{#if product.unit}<span>Unidad: {product.unit}</span>{/if}
-				<span>Existencia SICAR: <strong>{product.expected}</strong></span><span
+				<span>Existencia: <strong>{product.expected}</strong></span><span
 					>Diferencia: <strong
 						>{product.countedAt
 							? calculateDifference(product.physical, product.expected)

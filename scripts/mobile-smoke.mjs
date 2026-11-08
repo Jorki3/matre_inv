@@ -100,10 +100,13 @@ try {
 		.getByRole('combobox', { name: 'Estado de revisión', exact: true })
 		.selectOption('identified');
 	await page
-		.getByRole('combobox', { name: 'Clave principal SICAR relacionada', exact: true })
+		.getByRole('combobox', { name: 'Clave principal relacionada', exact: true })
 		.fill('K00000');
 	await page.getByRole('button', { name: 'Guardar artículo', exact: true }).click();
-	await page.getByTestId('unmatched-card').filter({ hasText: 'Identificado en SICAR' }).waitFor();
+	await page
+		.getByTestId('unmatched-card')
+		.filter({ hasText: 'Identificado en catálogo' })
+		.waitFor();
 	const findingDownload = page.waitForEvent('download');
 	await page
 		.getByRole('button', { name: 'Exportar artículos no encontrados', exact: true })
@@ -113,7 +116,7 @@ try {
 	const findingRows = XLSX.utils.sheet_to_json(findingBook.Sheets[findingBook.SheetNames[0]]);
 	assert.equal(findingRows.length, 1);
 	assert.equal(findingRows[0]['Cantidad física encontrada'], 1.25);
-	assert.equal(findingRows[0]['Clave SICAR relacionada'], 'K00000');
+	assert.equal(findingRows[0]['Clave relacionada'], 'K00000');
 	await nav('Inventario');
 	await search.fill('ALT0');
 	assert.match(await page.getByTestId('session-status').innerText(), /1\/2401 contados/);
@@ -172,19 +175,19 @@ try {
 	assert.equal(rows[0].Diferencia, -20);
 	assert.equal(rows[1]['Cantidad física'], null);
 	assert.equal(rows[1].Diferencia, null);
-	// The SICAR-specific download is independent from the full inventory report.
+	// The counts download is independent from the full inventory report.
 	page.once('dialog', (dialog) => dialog.dismiss());
-	await page.getByRole('button', { name: 'Exportar para SICAR', exact: true }).click();
-	const sicarDownload = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'Exportar conteos', exact: true }).click();
+	const countsDownload = page.waitForEvent('download');
 	page.once('dialog', (dialog) => {
 		assert.match(dialog.message(), /2400 productos pendientes/);
 		return dialog.accept();
 	});
-	await page.getByRole('button', { name: 'Exportar para SICAR', exact: true }).click();
-	const sicar = await sicarDownload;
-	const sicarBook = XLSX.read(await fs.readFile(await sicar.path()), { type: 'buffer' });
+	await page.getByRole('button', { name: 'Exportar conteos', exact: true }).click();
+	const countsFile = await countsDownload;
+	const countsBook = XLSX.read(await fs.readFile(await countsFile.path()), { type: 'buffer' });
 	assert.deepEqual(
-		XLSX.utils.sheet_to_json(sicarBook.Sheets[sicarBook.SheetNames[0]], { header: 1 }),
+		XLSX.utils.sheet_to_json(countsBook.Sheets[countsBook.SheetNames[0]], { header: 1 }),
 		[
 			['Clave', 'Cantidad'],
 			['K00000', 0]
@@ -337,7 +340,7 @@ try {
 			sessionPersistence: true,
 			finalizationConfirmation: true,
 			xlsxExport: true,
-			sicarExport: true,
+			countsExport: true,
 			unmatchedArticles: true,
 			unmatchedHistory: true,
 			unmatchedExcel: true,

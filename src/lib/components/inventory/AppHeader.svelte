@@ -11,7 +11,7 @@
 	<div class="flex items-center justify-between gap-3">
 		<div>
 			<p class="text-xs font-medium tracking-[0.2em] text-zinc-500 uppercase">MATRE Ferretería</p>
-			<h1 class="text-xl font-semibold">MATRE Inventario <span class="align-middle text-xs font-medium text-zinc-400">v0.7.1</span></h1>
+			<h1 class="text-xl font-semibold">MATRE Inventario <span class="align-middle text-xs font-medium text-zinc-400">v0.7.2</span></h1>
 			<!-- Versión de la app: actualizar junto con package.json -->
 		</div>
 		<div class="flex items-center gap-2">

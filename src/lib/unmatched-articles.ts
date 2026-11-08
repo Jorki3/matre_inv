@@ -2,7 +2,7 @@ import type { InventorySession, Product } from './inventory';
 
 export const reviewLabels = {
 	pending: 'Pendiente de revisar',
-	identified: 'Identificado en SICAR',
+	identified: 'Identificado en catálogo',
 	needs_creation: 'Requiere alta'
 } as const;
 export type ReviewStatus = keyof typeof reviewLabels;
@@ -156,7 +156,7 @@ export function validateUnmatchedArticles(input: unknown): UnmatchedArticle[] {
 			article.reviewStatus === 'identified' &&
 			(typeof article.linkedProductKey !== 'string' || !article.linkedProductKey.trim())
 		)
-			throw new Error('Falta la clave SICAR del hallazgo identificado.');
+			throw new Error('Falta la clave del hallazgo identificado.');
 		if (ids.has(article.id as string))
 			throw new Error('Hay identificadores de hallazgos duplicados.');
 		ids.add(article.id as string);
@@ -183,6 +183,6 @@ export function unmatchedExportRows(articles: UnmatchedArticle[]) {
 		'Fecha de registro': article.createdAt,
 		'Última edición': article.updatedAt ?? '',
 		'Estado de revisión': reviewLabels[article.reviewStatus],
-		'Clave SICAR relacionada': article.linkedProductKey ?? ''
+		'Clave relacionada': article.linkedProductKey ?? ''
 	}));
 }

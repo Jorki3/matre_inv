@@ -94,7 +94,7 @@ describe('findProductByBarcode', () => {
 	it('encuentra por barcode heredado', () => {
 		expect(findProductByBarcode(catalog, '7509876543210')?.id).toBe('P-taquete');
 	});
-	it('encuentra por clave SICAR', () => {
+	it('encuentra por clave principal', () => {
 		expect(findProductByBarcode(catalog, '19AH963021')?.id).toBe('P-brocha');
 		expect(findProductByBarcode(catalog, '46318')?.id).toBe('P-pila');
 	});
