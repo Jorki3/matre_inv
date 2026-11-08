@@ -22,6 +22,7 @@
 		lookupBarcodeScoped,
 		saveCounted,
 		saveUnmatchedItem,
+		shouldAutoStart,
 		showAll,
 		barcodeUnmatchedDraft,
 		type HistoryItem
@@ -30,11 +31,14 @@
 	let {
 		app,
 		onDone,
-		onRegistered
+		onRegistered,
+		autoStart = false
 	}: {
 		app: InventoryController;
 		onDone: () => void;
 		onRegistered: (item: HistoryItem) => void;
+		/** El panel se abrió con el icono del código: abrir la cámara de inmediato, en un solo tap. */
+		autoStart?: boolean;
 	} = $props();
 
 	let videoEl: HTMLVideoElement | undefined = $state();
@@ -47,6 +51,22 @@
 	let unmatchedLocation = $state('');
 
 	const camera = new BarcodeCamera({ onCode: (code) => handleCode(code) });
+
+	// Un solo tap: al abrirse con el icono, el panel abre la cámara de
+	// inmediato, sin esperar al botón de escanear (que queda como
+	// reintento manual si la cámara falla). El $effect corre en el mismo
+	// flush de Svelte que el tap provocó — sin setTimeout ni esperas — así
+	// que el gesto del tap sigue válido cuando se pide el permiso. Una
+	// sola vez por montaje: si el permiso se niega, se muestra
+	// `cameraError` en español y no se reintenta en bucle. El arranque
+	// reusa el fix de la cámara (scanning + tick antes de getUserMedia).
+	let autoStarted = $state(false);
+	$effect(() => {
+		if (shouldAutoStart(autoStart, autoStarted, camera.supported)) {
+			autoStarted = true;
+			void camera.start(() => videoEl);
+		}
+	});
 
 	onDestroy(() => {
 		camera.stop();

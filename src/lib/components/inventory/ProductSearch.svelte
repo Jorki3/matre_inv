@@ -95,11 +95,13 @@
 
 	{#if mode === 'voice'}
 		<div class="mt-3">
-			<VoicePanel {app} onDone={handleDone} onRegistered={handleRegistered} />
+			<!-- autoStart: el panel solo se monta al tocar el icono, y ese tap es el gesto: empieza a escuchar de inmediato. -->
+			<VoicePanel {app} autoStart onDone={handleDone} onRegistered={handleRegistered} />
 		</div>
 	{:else if mode === 'barcode'}
 		<div class="mt-3">
-			<BarcodePanel {app} onDone={handleDone} onRegistered={handleRegistered} />
+			<!-- autoStart: el panel solo se monta al tocar el icono, y ese tap es el gesto: abre la cámara de inmediato. -->
+			<BarcodePanel {app} autoStart onDone={handleDone} onRegistered={handleRegistered} />
 		</div>
 	{/if}
 

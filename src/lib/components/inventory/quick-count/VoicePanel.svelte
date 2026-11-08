@@ -1,10 +1,8 @@
 <!--
-  Dictado por voz, como panel desplegable debajo de la barra de búsqueda
-  (se abre con el micrófono junto a la caja). Análisis local (Web Speech
-  API + `parseVoiceCount`): no usa Muse, no hay red ni tokens. El cuadro
-  de texto es solo para escribir el dictado cuando no hay micrófono o
-  para probar: no es un modo aparte. Nada se guarda hasta Confirmar
-  conteo; al confirmar o cancelar, el panel se cierra.
+  Dictado por voz, debajo de la barra de búsqueda (se abre con el
+  micrófono junto a la caja). Análisis local (Web Speech API): no usa
+  Muse, no hay red ni tokens. Nada se guarda hasta Confirmar conteo;
+  al confirmar o cancelar, el panel se cierra.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
@@ -24,6 +22,7 @@
 		interpretScoped,
 		saveCounted,
 		saveUnmatchedItem,
+		shouldAutoStart,
 		showAll,
 		voiceUnmatchedDraft,
 		type HistoryItem
@@ -32,11 +31,14 @@
 	let {
 		app,
 		onDone,
-		onRegistered
+		onRegistered,
+		autoStart = false
 	}: {
 		app: InventoryController;
 		onDone: () => void;
 		onRegistered: (item: HistoryItem) => void;
+		/** El panel se abrió con el icono del micrófono: escuchar de inmediato, en un solo tap. */
+		autoStart?: boolean;
 	} = $props();
 
 	let transcript = $state('');
@@ -52,6 +54,19 @@
 		onTranscript: (text) => interpret(text),
 		onError: (message) => {
 			error = message;
+		}
+	});
+
+	// Un solo tap: al abrirse con el icono empieza a escuchar de
+	// inmediato (el botón grande queda para detener o reintentar). El
+	// $effect corre en el mismo flush que el tap provocó, sin setTimeout
+	// ni esperas, así que el gesto sigue válido. Una sola vez: si el
+	// permiso se niega, mensaje en español y sin reintentos.
+	let autoStarted = $state(false);
+	$effect(() => {
+		if (shouldAutoStart(autoStart, autoStarted, voice.supported)) {
+			autoStarted = true;
+			voice.start();
 		}
 	});
 

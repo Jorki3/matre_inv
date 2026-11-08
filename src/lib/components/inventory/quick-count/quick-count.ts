@@ -25,6 +25,25 @@ export function togglePanel(
 	return current === next ? 'closed' : next;
 }
 
+/**
+ * ¿Debe un panel recién abierto arrancar solo, en un solo tap?
+ *
+ * El panel solo se monta cuando se toca su icono, y ese tap ES el gesto
+ * del usuario: el panel arranca en el mismo flush de Svelte que el tap
+ * provocó (sin setTimeout ni esperas), así que el permiso del micrófono
+ * o de la cámara se pide con el gesto todavía válido. Se arranca una
+ * sola vez por montaje (`alreadyStarted`): si el permiso se niega, el
+ * panel muestra el mensaje en español y NO reintenta en bucle; el botón
+ * grande del panel queda como reintento manual.
+ */
+export function shouldAutoStart(
+	autoStart: boolean,
+	alreadyStarted: boolean,
+	supported: boolean
+): boolean {
+	return autoStart && !alreadyStarted && supported;
+}
+
 /** Un registro en el historial compartido de la sesión. */
 export interface HistoryItem {
 	label: string;

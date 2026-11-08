@@ -13,6 +13,22 @@ interface BarcodeDetectorConstructorLike {
 	getSupportedFormats?: () => Promise<string[]>;
 }
 
+/**
+ * Mensaje en español para un fallo al abrir la cámara. Puro, para poder
+ * probarlo sin cámara. El permiso denegado tiene mensaje propio: con el
+ * arranque en un solo tap es el primer error que Eduardo puede ver, y
+ * debe decirle qué hacer (activar el permiso o escribir el código).
+ */
+export function cameraErrorMessage(name: string): string {
+	if (name === 'NotAllowedError') {
+		return 'Permiso de cámara denegado. Actívalo para este sitio en los ajustes del navegador y vuelve a intentar, o escribe el código a mano.';
+	}
+	if (name === 'NotFoundError') {
+		return 'No se encontró cámara en este teléfono. Escribe el código a mano.';
+	}
+	return 'No se pudo abrir la cámara. Escribe el código a mano.';
+}
+
 function getBarcodeDetectorConstructor(): BarcodeDetectorConstructorLike | null {
 	if (typeof window === 'undefined') return null;
 	const w = window as unknown as {
@@ -110,12 +126,7 @@ export class BarcodeCamera {
 		} catch (err) {
 			const name = err instanceof Error ? err.name : '';
 			this.scanning = false;
-			this.cameraError =
-				name === 'NotAllowedError'
-					? 'Permiso de cámara denegado. Actívalo para este sitio en los ajustes del navegador y vuelve a intentar, o escribe el código a mano.'
-					: name === 'NotFoundError'
-						? 'No se encontró cámara en este teléfono. Escribe el código a mano.'
-						: 'No se pudo abrir la cámara. Escribe el código a mano.';
+			this.cameraError = cameraErrorMessage(name);
 			return;
 		}
 		const video = getVideo();
