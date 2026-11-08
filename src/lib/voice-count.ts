@@ -1,4 +1,11 @@
-import { normalizeText, type Product } from './inventory';
+import {
+	combineMixedTokens,
+	countTokenMatches,
+	normalizeText,
+	productFractions,
+	productWholeInches,
+	type Product
+} from './inventory';
 
 /**
  * Dictado por voz para MATRE Inventario.
@@ -22,16 +29,32 @@ import { normalizeText, type Product } from './inventory';
  * - "foco de 59 watts, 5" con un catálogo que solo tiene Foco 9W -> NO es
  *   coincidencia exacta y NO se fuerza al de 9W. Exacto exige que TODAS las
  *   palabras y medidas dictadas estén en el producto.
+ * - "brocha de media pulgada, tres piezas" -> Brocha practica 013mm 1/2
+ *   exito, 3 piezas. "Media pulgada" es la medida 1/2 (Eduardo no dice
+ *   los milímetros) y "1 pulgada y media" es 1 1/2 (Brocha 038mm 11/2).
+ *   La coincidencia es por token completo: la "a" de la clave A-AZ110
+ *   ya no hace que "brocha" case con el Lubricante en aerosol.
+ * - Si varias brochas coinciden exacto ("brocha" sin medida), NO se
+ *   preselecciona ninguna: quedan todas como parecidos y el usuario elige.
  */
 
 export interface VoiceFraction {
+	/** Parte entera de una mixta: 1 en "1 1/2". Ausente (o 0) en "1/2". */
+	whole?: number;
 	numerator: number;
 	denominator: number;
 	text: string;
 }
 
 export type VoiceMeasure =
-	| { kind: 'fraction'; numerator: number; denominator: number; text: string }
+	| {
+			kind: 'fraction';
+			/** Parte entera: 2 en "2 pulgadas", 1 en "1 1/2", 0 en "1/2". */
+			whole: number;
+			numerator: number;
+			denominator: number;
+			text: string;
+	  }
 	| { kind: 'watts'; value: number };
 
 export interface VoiceCandidate {
@@ -215,6 +238,7 @@ export function parseNumberWords(
 	let current = 0;
 	let i = start;
 	let consumed = 0;
+	let sawNumber = false;
 	while (i < tokens.length) {
 		const token = tokens[i];
 		if (token === 'y') {
@@ -226,17 +250,21 @@ export function parseNumberWords(
 			current = (current === 0 ? 1 : current) * 1000;
 			total += current;
 			current = 0;
+			sawNumber = true;
 			i += 1;
 			consumed += 1;
 			continue;
 		}
 		const value = NUMBER_WORDS[token];
 		if (value === undefined) break;
+		sawNumber = true;
 		current += value;
 		i += 1;
 		consumed += 1;
 	}
-	return { value: total + current, consumed };
+	// Una "y" suelta no es un número: sin dígito ni palabra numérica no
+	// se consume nada (antes "y media" se leía como el número 0).
+	return { value: total + current, consumed: sawNumber ? consumed : 0 };
 }
 
 /** Lee un número (dígitos o palabras) en `tokens[i]`, si lo hay. */
@@ -258,22 +286,38 @@ function splitGluedFraction(token: string): VoiceFraction | null {
 	const numerator = Number(token[0]);
 	const denominator = Number(token.slice(1));
 	if (denominator < 2 || numerator >= denominator) return null;
-	return { numerator, denominator, text: `${numerator}/${denominator}` };
+	return { whole: 0, numerator, denominator, text: `${numerator}/${denominator}` };
+}
+
+/** Una fracción dictada como medida (con parte entera 0 si no es mixta). */
+function asMeasure(fraction: VoiceFraction): VoiceMeasure {
+	return {
+		kind: 'fraction',
+		whole: fraction.whole ?? 0,
+		numerator: fraction.numerator,
+		denominator: fraction.denominator,
+		text: fraction.text
+	};
 }
 
 function productMeasures(product: Product): VoiceMeasure[] {
+	const measures: VoiceMeasure[] = [];
+	for (const fraction of productFractions(product)) {
+		measures.push(asMeasure(fraction));
+	}
+	// El "2" de "Brocha practica 050mm 2 exito" es 2 pulgadas enteras.
+	for (const inches of productWholeInches(product)) {
+		measures.push({
+			kind: 'fraction',
+			whole: inches,
+			numerator: 0,
+			denominator: 1,
+			text: `${inches}"`
+		});
+	}
 	const haystack = normalizeText(
 		`${product.name} ${product.key} ${product.alternateKey ?? product.barcode ?? ''}`
 	);
-	const measures: VoiceMeasure[] = [];
-	for (const match of haystack.matchAll(/(\d+)\/(\d+)/g)) {
-		measures.push({
-			kind: 'fraction',
-			numerator: Number(match[1]),
-			denominator: Number(match[2]),
-			text: `${match[1]}/${match[2]}`
-		});
-	}
 	for (const match of haystack.matchAll(/(\d+)\s*w\b/g)) {
 		measures.push({ kind: 'watts', value: Number(match[1]) });
 	}
@@ -284,6 +328,7 @@ function measureMatches(product: Product, measure: VoiceMeasure): boolean {
 	return productMeasures(product).some((candidate) => {
 		if (measure.kind === 'fraction' && candidate.kind === 'fraction') {
 			return (
+				measure.whole === candidate.whole &&
 				measure.numerator === candidate.numerator &&
 				measure.denominator === candidate.denominator
 			);
@@ -296,55 +341,36 @@ function measureMatches(product: Product, measure: VoiceMeasure): boolean {
 }
 
 function measureValue(measure: VoiceMeasure): number {
-	return measure.kind === 'fraction' ? measure.denominator : measure.value;
+	if (measure.kind === 'fraction') return measure.whole > 0 ? measure.whole : measure.denominator;
+	return measure.value;
 }
 
 /**
- * Busca productos parecidos. Exacto solo si TODAS las palabras y TODAS las
- * medidas dictadas están en el producto. Un parecido nunca es exacto: por
- * ejemplo, "foco de 59 watts" es parecido al Foco 9W (comparte "foco") pero
- * no exacto, porque 59 != 9.
+ * Busca productos parecidos. Exacto solo si TODAS las palabras, números y
+ * medidas dictadas están en el producto, con coincidencia por token
+ * completo (ver countTokenMatches en inventory.ts): la "a" de la clave
+ * A-AZ110 ya no hace que "brocha" coincida con el Lubricante, y un "2"
+ * ya no coincide con "110ml" ni con el barcode "75022...".
+ * Un parecido nunca es exacto: por ejemplo, "foco de 59 watts" es
+ * parecido al Foco 9W (comparte "foco") pero no exacto, porque 59 != 9.
  */
 export function findCandidates(
 	products: Product[],
 	descriptionTokens: string[],
 	measures: VoiceMeasure[]
 ): VoiceCandidate[] {
-	const words = descriptionTokens.filter((token) => !isDigitToken(token));
-	const numbers = descriptionTokens.filter((token) => isDigitToken(token));
 	const scored: VoiceCandidate[] = [];
 
 	for (const product of products) {
-		const haystack = normalizeText(
-			`${product.name} ${product.key} ${product.alternateKey ?? product.barcode ?? ''}`
-		);
-		const haystackTokens = haystack.split(/[^a-z0-9/]+/).filter(Boolean);
-		let matchedTokens = 0;
-		let wordsOk = true;
-		for (const word of words) {
-			if (haystackTokens.some((token) => token.includes(word) || word.includes(token))) {
-				matchedTokens += 1;
-			} else {
-				wordsOk = false;
-			}
-		}
-		let numbersOk = true;
-		for (const number of numbers) {
-			if (haystack.includes(number)) {
-				matchedTokens += 1;
-			} else {
-				numbersOk = false;
-			}
-		}
-		const measuresOk = measures.every((measure) => measureMatches(product, measure));
+		const matchedTokens = countTokenMatches(product, descriptionTokens);
 		const measuresMatched = measures.filter((measure) =>
 			measureMatches(product, measure)
 		).length;
+		const measuresOk = measures.every((measure) => measureMatches(product, measure));
 		if (matchedTokens === 0 && measuresMatched === 0) continue;
 		const exact =
-			words.length + numbers.length + measures.length > 0 &&
-			wordsOk &&
-			numbersOk &&
+			combineMixedTokens(descriptionTokens).length + measures.length > 0 &&
+			matchedTokens === combineMixedTokens(descriptionTokens).length &&
 			measuresOk;
 		scored.push({ product, exact, matchedTokens: matchedTokens + measuresMatched });
 	}
@@ -377,12 +403,19 @@ export function parseVoiceCount(transcript: string, products: Product[]): VoiceI
 	rawTokens.forEach((token, i) => {
 		const match = token.match(/^(\d+)\/(\d+)$/);
 		if (!match || consumed[i]) return;
+		// "1 1/2" escrito por separado: el dígito anterior es la parte entera.
+		let whole = 0;
+		if (i > 0 && !consumed[i - 1] && isDigitToken(rawTokens[i - 1])) {
+			whole = Number(rawTokens[i - 1]);
+			take(i - 1);
+		}
 		const fraction: VoiceFraction = {
+			whole,
 			numerator: Number(match[1]),
 			denominator: Number(match[2]),
-			text: `${match[1]}/${match[2]}`
+			text: whole ? `${whole} ${match[1]}/${match[2]}` : `${match[1]}/${match[2]}`
 		};
-		measures.push({ kind: 'fraction', ...fraction });
+		measures.push(asMeasure(fraction));
 		take(i);
 	});
 
@@ -396,13 +429,44 @@ export function parseVoiceCount(transcript: string, products: Product[]): VoiceI
 		const denominator = DENOMINATORS[next];
 		if (denominator === undefined) continue;
 		const fraction: VoiceFraction = {
+			whole: 0,
 			numerator: number.value,
 			denominator,
 			text: `${number.value}/${denominator}`
 		};
-		measures.push({ kind: 'fraction', ...fraction });
+		measures.push(asMeasure(fraction));
 		for (let j = 0; j < number.consumed; j += 1) take(i + j);
 		take(i + number.consumed);
+	}
+
+	// 2c. Medidas con "media": "media pulgada" = 1/2, "1 pulgada y media"
+	//     o "1 y media" = 1 1/2, "2 y media" = 2 1/2. Eduardo no dice
+	//     los milímetros: dice "brocha de media pulgada" y es la de 013mm 1/2.
+	const HALF_TOKENS = new Set(['media', 'medio', 'medias', 'medios']);
+	for (let i = 0; i < rawTokens.length; i += 1) {
+		if (consumed[i]) continue;
+		const number = readNumber(rawTokens, i);
+		if (number) {
+			let j = i + number.consumed;
+			if (rawTokens[j] === 'pulgada' || rawTokens[j] === 'pulgadas') j += 1;
+			if (rawTokens[j] === 'y' && HALF_TOKENS.has(rawTokens[j + 1] ?? '')) {
+				measures.push({
+					kind: 'fraction',
+					whole: number.value,
+					numerator: 1,
+					denominator: 2,
+					text: `${number.value} 1/2`
+				});
+				for (let k = i; k <= j + 1; k += 1) take(k);
+				if (rawTokens[j + 2] === 'pulgada' || rawTokens[j + 2] === 'pulgadas') take(j + 2);
+				continue;
+			}
+		}
+		if (HALF_TOKENS.has(rawTokens[i])) {
+			measures.push({ kind: 'fraction', whole: 0, numerator: 1, denominator: 2, text: '1/2' });
+			take(i);
+			if (rawTokens[i + 1] === 'pulgada' || rawTokens[i + 1] === 'pulgadas') take(i + 1);
+		}
 	}
 
 	// 3. Medidas en watts: "59 watts", "cincuenta y nueve watts", "59w".
@@ -452,25 +516,48 @@ export function parseVoiceCount(transcript: string, products: Product[]): VoiceI
 			Number(beforeLast.token) < Number(last.token)
 		) {
 			const fraction: VoiceFraction = {
+				whole: 0,
 				numerator: Number(beforeLast.token),
 				denominator: Number(last.token),
 				text: `${beforeLast.token}/${last.token}`
 			};
-			measures.push({ kind: 'fraction', ...fraction });
+			measures.push(asMeasure(fraction));
 			take(beforeLast.i);
 			take(last.i);
 		}
 	}
 
 	// 6. Si no hay cantidad todavía, el último número suelto es la cantidad.
+	//     Un número seguido de "pulgadas" es medida, no cantidad.
 	if (quantity === undefined) {
 		for (let i = rawTokens.length - 1; i >= 0; i -= 1) {
 			if (consumed[i]) continue;
 			const number = readNumber(rawTokens, i);
 			if (!number) continue;
+			const next = rawTokens[i + number.consumed];
+			if (next === 'pulgada' || next === 'pulgadas') continue;
 			quantity = number.value;
 			for (let j = 0; j < number.consumed; j += 1) take(i + j);
 			break;
+		}
+	}
+
+	// 6b. Pulgadas enteras: "2 pulgadas" es medida, no cantidad ni descripción.
+	for (let i = 0; i < rawTokens.length; i += 1) {
+		if (consumed[i]) continue;
+		const number = readNumber(rawTokens, i);
+		if (!number) continue;
+		const next = rawTokens[i + number.consumed];
+		if (next === 'pulgada' || next === 'pulgadas') {
+			measures.push({
+				kind: 'fraction',
+				whole: number.value,
+				numerator: 0,
+				denominator: 1,
+				text: `${number.value}"`
+			});
+			for (let j = 0; j < number.consumed; j += 1) take(i + j);
+			take(i + number.consumed);
 		}
 	}
 
@@ -482,7 +569,7 @@ export function parseVoiceCount(transcript: string, products: Product[]): VoiceI
 		if (isDigitToken(rawTokens[i]) && quantity !== undefined) {
 			const glued = splitGluedFraction(rawTokens[i]);
 			if (glued) {
-				measures.push({ kind: 'fraction', ...glued });
+				measures.push(asMeasure(glued));
 				take(i);
 				continue;
 			}
@@ -496,11 +583,12 @@ export function parseVoiceCount(transcript: string, products: Product[]): VoiceI
 			Number(rawTokens[i]) < Number(rawTokens[i + 1])
 		) {
 			const fraction: VoiceFraction = {
+				whole: 0,
 				numerator: Number(rawTokens[i]),
 				denominator: Number(rawTokens[i + 1]),
 				text: `${rawTokens[i]}/${rawTokens[i + 1]}`
 			};
-			measures.push({ kind: 'fraction', ...fraction });
+			measures.push(asMeasure(fraction));
 			take(i);
 			take(i + 1);
 		}
@@ -511,11 +599,19 @@ export function parseVoiceCount(transcript: string, products: Product[]): VoiceI
 	);
 	const description = descriptionTokens.join(' ');
 	const candidates = findCandidates(products, descriptionTokens, measures);
-	const exactCandidate = candidates.find((candidate) => candidate.exact);
+	let exactCandidate = candidates.find((candidate) => candidate.exact);
+	if (exactCandidate && candidates.filter((candidate) => candidate.exact).length > 1) {
+		// Varios productos coinciden exacto (p. ej. "brocha" sin medida):
+		// no se puede adivinar cuál es. Quedan todos como parecidos y el
+		// usuario elige a mano.
+		for (const candidate of candidates) candidate.exact = false;
+		exactCandidate = undefined;
+	}
 	const firstFraction = measures.find((measure) => measure.kind === 'fraction');
 	const fraction: VoiceFraction | undefined =
 		firstFraction && firstFraction.kind === 'fraction'
 			? {
+					...(firstFraction.whole ? { whole: firstFraction.whole } : {}),
 					numerator: firstFraction.numerator,
 					denominator: firstFraction.denominator,
 					text: firstFraction.text
