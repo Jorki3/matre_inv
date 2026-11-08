@@ -5,8 +5,25 @@ import { parseVoiceCount, type VoiceInterpretation } from '$lib/voice-count';
 import { findProductByBarcode } from '$lib/barcode-scan';
 import { filters } from '../inventory-ui';
 
-/** Panel abierto en la barra de conteo rápido. Solo uno a la vez. */
-export type QuickCountMode = 'closed' | 'voice' | 'text' | 'barcode';
+/**
+ * Panel abierto debajo de la barra de búsqueda. Solo uno a la vez.
+ * Estilo YouTube: el micrófono abre el dictado, el código de barras el
+ * escaneo. No hay modo "Escribir": era un duplicado del dictado y
+ * Eduardo pidió quitarlo (el panel de voz ya trae su cuadro de texto
+ * para probar sin micrófono).
+ */
+export type SearchPanelMode = 'closed' | 'voice' | 'barcode';
+
+/**
+ * Cambia el panel abierto: tocar el mismo icono lo cierra, tocar el
+ * otro cambia de panel. Puro, para poder probarlo sin montar Svelte.
+ */
+export function togglePanel(
+	current: SearchPanelMode,
+	next: Exclude<SearchPanelMode, 'closed'>
+): SearchPanelMode {
+	return current === next ? 'closed' : next;
+}
 
 /** Un registro en el historial compartido de la sesión. */
 export interface HistoryItem {
@@ -20,7 +37,7 @@ export function addHistory(items: HistoryItem[], item: HistoryItem): HistoryItem
 }
 
 /**
- * Conteo rápido respeta el filtro activo (Todos / Pendientes / Contados /
+ * La búsqueda por voz o por código respeta el filtro activo (Todos /
  * Diferencias / Sin diferencias): voz y código solo buscan entre los
  * productos de ese filtro.
  *

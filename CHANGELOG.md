@@ -2,6 +2,14 @@
 
 Todos los cambios notables de la app. Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [0.7.0] - 2026-11-08
+
+### Añadido
+- Buscador estilo YouTube: el buscador original ahora tiene junto a la caja un botón de micrófono para dictar y un botón de código de barras para escanear; el panel se abre debajo de la barra y se cierra al confirmar o cancelar.
+
+### Quitado
+- Botón Escribir y la barra "Contar rápido": Escribir era lo mismo que el dictado por voz, y la barra ocupaba pantalla de más.
+
 ## [0.6.0] - 2026-11-08
 
 ### Añadido

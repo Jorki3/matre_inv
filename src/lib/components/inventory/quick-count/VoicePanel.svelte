@@ -1,8 +1,10 @@
 <!--
-  Dictado por voz, como panel colapsable de la barra de conteo rápido.
-  Análisis local (Web Speech API + `parseVoiceCount`): no usa Muse, no
-  hay red ni tokens. Nada se guarda hasta Confirmar conteo; al confirmar
-  o cancelar, el panel se cierra y vuelve la barra.
+  Dictado por voz, como panel desplegable debajo de la barra de búsqueda
+  (se abre con el micrófono junto a la caja). Análisis local (Web Speech
+  API + `parseVoiceCount`): no usa Muse, no hay red ni tokens. El cuadro
+  de texto es solo para escribir el dictado cuando no hay micrófono o
+  para probar: no es un modo aparte. Nada se guarda hasta Confirmar
+  conteo; al confirmar o cancelar, el panel se cierra.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
@@ -29,12 +31,10 @@
 
 	let {
 		app,
-		autofocusText = false,
 		onDone,
 		onRegistered
 	}: {
 		app: InventoryController;
-		autofocusText?: boolean;
 		onDone: () => void;
 		onRegistered: (item: HistoryItem) => void;
 	} = $props();
@@ -47,18 +47,12 @@
 	let error = $state('');
 	let typedText = $state('');
 	let unmatchedLocation = $state('');
-	let textInput: HTMLInputElement | undefined = $state();
 
 	const voice = new VoiceRecognition({
 		onTranscript: (text) => interpret(text),
 		onError: (message) => {
 			error = message;
 		}
-	});
-
-	// En modo "Escribir" el teclado ya viene enfocado.
-	$effect(() => {
-		if (autofocusText) textInput?.focus();
 	});
 
 	// Si el panel se cierra (o cambia a Código) mientras escucha, se
@@ -154,9 +148,8 @@
 
 	<div class="flex gap-2">
 		<input
-			bind:this={textInput}
 			bind:value={typedText}
-			aria-label="Escribir lo dictado para probar sin micrófono"
+			aria-label="Texto dictado para probar sin micrófono"
 			placeholder='Ej. "Rondana plana de 5 16, 100 piezas"'
 			class="min-h-11 flex-1 rounded-xl border border-zinc-300 bg-transparent px-3 text-base dark:border-zinc-700"
 		/>

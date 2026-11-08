@@ -23,7 +23,9 @@ function product(): Product {
 		key: '19AH963021',
 		expected: 0,
 		physical: 0,
-		createdAt: new Date().toISOString()
+		// Fecha fija: dos llamadas a product() deben ser idénticas (si no,
+		// el toHaveBeenCalledWith de saveCounted falla al cruzar un milisegundo).
+		createdAt: '2026-11-08T00:00:00.000Z'
 	};
 }
 
