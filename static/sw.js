@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matre-inventario-v8';
+const CACHE_NAME = 'matre-inventario-v9';
 const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, '');
 const APP_ROOT = `${BASE_PATH}/`;
 const PRECACHE = [APP_ROOT, `${BASE_PATH}/manifest.webmanifest`, `${BASE_PATH}/favicon.svg`];
