@@ -122,3 +122,159 @@ describe('parseVoiceCount', () => {
 		expect(result.exact).toBe(false);
 	});
 });
+
+import { searchProducts } from './inventory';
+
+const brochas: Product[] = [
+	product({ id: 'B-125', name: 'Brocha practica 125mm 5 exito', key: '19AH963028', alternateKey: '7500112842497' }),
+	product({ id: 'B-075', name: 'Brocha practica 075mm 3 exito', key: '19AH963026', alternateKey: '7500112842473' }),
+	product({ id: 'B-110', name: 'Brocha practica 110mm 4 exito', key: '19AH963027', alternateKey: '7500112842480' }),
+	product({ id: 'B-013', name: 'Brocha practica 013mm 1/2 exito', key: '19AH963021', alternateKey: '7500112842428' }),
+	product({ id: 'B-025', name: 'Brocha practica 025mm 1 exito', key: '19AH963022', alternateKey: '7500112842435' }),
+	product({ id: 'B-038', name: 'Brocha practica 038mm 11/2 exito', key: '19AH963023', alternateKey: '7500112842442' }),
+	product({ id: 'B-050', name: 'Brocha practica 050mm 2 exito', key: '19AH963024', alternateKey: '7500112842459' }),
+	product({ id: 'B-064', name: 'Brocha practica 064mm 21/2 exito', key: '19AH963025', alternateKey: '7500112842466' }),
+	product({ id: 'B-160', name: 'Brocha practica 160mm 6 exito', key: '19AH963029', alternateKey: '7500112842503' }),
+	product({ id: 'L-1', name: 'Lubricante en aerosol 110ml Zoms', key: 'A-AZ110', alternateKey: '7502293080002' })
+];
+
+describe('brochas: media pulgada es 1/2 y el Lubricante no aparece', () => {
+	it('"brocha de media pulgada tres piezas" -> Brocha 013mm 1/2, 3, sin Lubricante', () => {
+		const result = parseVoiceCount('brocha de media pulgada tres piezas', brochas);
+		expect(result.quantity).toBe(3);
+		expect(result.fraction).toEqual({ numerator: 1, denominator: 2, text: '1/2' });
+		expect(result.product?.key).toBe('19AH963021');
+		expect(result.exact).toBe(true);
+		expect(result.candidates.every((c) => c.product.key !== 'A-AZ110')).toBe(true);
+		expect(
+			result.candidates.some((c) => !c.exact && c.product.name.startsWith('Brocha'))
+		).toBe(true);
+	});
+
+	it('"brocha 1 1/2, 2 piezas" escrita por separado -> Brocha 038mm 11/2 exact', () => {
+		const result = parseVoiceCount('brocha 1 1/2, 2 piezas', brochas);
+		expect(result.quantity).toBe(2);
+		expect(result.fraction?.text).toBe('1 1/2');
+		expect(result.product?.key).toBe('19AH963023');
+		expect(result.exact).toBe(true);
+	});
+
+	it('"brocha de 2 pulgadas, 5" -> Brocha 050mm 2 exact', () => {
+		const result = parseVoiceCount('brocha de 2 pulgadas, 5', brochas);
+		expect(result.quantity).toBe(5);
+		expect(result.product?.key).toBe('19AH963024');
+		expect(result.exact).toBe(true);
+	});
+
+	it('"brocha de 1 pulgada y media, 2" -> Brocha 038mm 11/2 exact', () => {
+		const result = parseVoiceCount('brocha de 1 pulgada y media, 2', brochas);
+		expect(result.quantity).toBe(2);
+		expect(result.fraction?.text).toBe('1 1/2');
+		expect(result.product?.key).toBe('19AH963023');
+		expect(result.exact).toBe(true);
+	});
+
+	it('"brocha de 2 y media, 1" -> Brocha 064mm 21/2 exact', () => {
+		const result = parseVoiceCount('brocha de 2 y media, 1', brochas);
+		expect(result.quantity).toBe(1);
+		expect(result.fraction?.text).toBe('2 1/2');
+		expect(result.product?.key).toBe('19AH963025');
+		expect(result.exact).toBe(true);
+	});
+
+	it('"brocha, 4" sin medida -> no exacto, solo brochas como parecidos', () => {
+		const result = parseVoiceCount('brocha, 4', brochas);
+		expect(result.quantity).toBe(4);
+		expect(result.exact).toBe(false);
+		expect(result.product).toBeUndefined();
+		expect(result.candidates.length).toBeGreaterThan(0);
+		expect(result.candidates.every((c) => c.product.name.startsWith('Brocha'))).toBe(true);
+		expect(result.candidates.every((c) => !c.exact)).toBe(true);
+	});
+});
+
+describe('searchProducts por tokens (buscador tal cual)', () => {
+	it('"brocha de media pulgada" -> solo la 013mm 1/2', () => {
+		const found = searchProducts(brochas, 'brocha de media pulgada');
+		expect(found.map((p) => p.key)).toEqual(['19AH963021']);
+	});
+
+	it('"brocha 1/2" -> solo la 013mm 1/2, no la 11/2 ni la 21/2', () => {
+		const found = searchProducts(brochas, 'brocha 1/2');
+		expect(found.map((p) => p.key)).toEqual(['19AH963021']);
+	});
+
+	it('"brocha 1 1/2" -> solo la 038mm 11/2', () => {
+		const found = searchProducts(brochas, 'brocha 1 1/2');
+		expect(found.map((p) => p.key)).toEqual(['19AH963023']);
+	});
+
+	it('"brocha 2" -> solo la 050mm 2, no el Lubricante 110ml', () => {
+		const found = searchProducts(brochas, 'brocha 2');
+		expect(found.map((p) => p.key)).toEqual(['19AH963024']);
+	});
+
+	it('"brocha" -> las 9 brochas, sin Lubricante', () => {
+		const found = searchProducts(brochas, 'brocha');
+		expect(found).toHaveLength(9);
+		expect(found.every((p) => p.key !== 'A-AZ110')).toBe(true);
+	});
+
+	it('buscar por clave "19AH963021" sigue funcionando', () => {
+		const found = searchProducts(brochas, '19AH963021');
+		expect(found.map((p) => p.key)).toEqual(['19AH963021']);
+	});
+
+	it('"lubricante" -> solo el Lubricante', () => {
+		const found = searchProducts(brochas, 'lubricante');
+		expect(found.map((p) => p.key)).toEqual(['A-AZ110']);
+	});
+});
+
+describe('rodillo sin cantidad no casa con la pila', () => {
+	const pila = product({
+		id: 'PIL-1',
+		name: 'Pila alcalina D blister c/2 pz al-d voltech',
+		key: '46318',
+		alternateKey: '7501206657652'
+	});
+	const rodillo = product({
+		id: 'ROD-1',
+		name: 'Rodillo para pintar',
+		key: 'ROD-001'
+	});
+	const sinRodillo = [pila, ...brochas.slice(0, 3)];
+	const conRodillo = [pila, rodillo, ...brochas.slice(0, 3)];
+
+	it('"rodillo" solo, sin cantidad -> no exacto, la pila ni aparece', () => {
+		const result = parseVoiceCount('rodillo', sinRodillo);
+		// Sin cantidad Confirmar queda deshabilitado en VoiceCount
+		// (quantityDraft es undefined): no se puede guardar nada.
+		expect(result.quantity).toBeUndefined();
+		expect(result.exact).toBe(false);
+		expect(result.product).toBeUndefined();
+		expect(result.candidates).toHaveLength(0);
+		expect(result.candidates.some((c) => c.product.key === '46318')).toBe(false);
+	});
+
+	it('"rodillo" con un rodillo real en catálogo sí lo encuentra exacto', () => {
+		const result = parseVoiceCount('rodillo', conRodillo);
+		expect(result.quantity).toBeUndefined();
+		expect(result.exact).toBe(true);
+		expect(result.product?.key).toBe('ROD-001');
+		expect(result.candidates.some((c) => c.product.key === '46318')).toBe(false);
+	});
+
+	it('"rodillo, 3 piezas" -> cantidad 3, exacto el rodillo, sin pila', () => {
+		const result = parseVoiceCount('rodillo, 3 piezas', conRodillo);
+		expect(result.quantity).toBe(3);
+		expect(result.exact).toBe(true);
+		expect(result.product?.key).toBe('ROD-001');
+		expect(result.candidates.some((c) => c.product.key === '46318')).toBe(false);
+	});
+
+	it('buscar "rodillo" en el buscador tal cual no trae la pila', () => {
+		expect(searchProducts(sinRodillo, 'rodillo')).toHaveLength(0);
+		expect(searchProducts(conRodillo, 'rodillo').map((p) => p.key)).toEqual(['ROD-001']);
+	});
+});
