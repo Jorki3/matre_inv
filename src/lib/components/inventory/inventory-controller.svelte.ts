@@ -42,7 +42,7 @@ import {
 	readStoredTheme,
 	saveInventoryState
 } from '$lib/database';
-import { createSicarExport, SICAR_EXPORT_LAYOUT } from '$lib/sicar-export';
+import { createCountsExport, COUNTS_EXPORT_LAYOUT } from '$lib/counts-export';
 import {
 	saveUnmatchedArticle,
 	removeUnmatchedArticle,
@@ -254,7 +254,7 @@ export function createInventoryController() {
 				replacing
 					? `Se reemplazarán ${products.length} productos y sus conteos por ${batch.products.length} productos pendientes.`
 					: updating
-						? `Se actualizarán ${batch.updates} claves existentes y se agregarán ${batch.additions} productos. Se conservarán las cantidades físicas, fechas de conteo y productos ausentes del archivo. Las diferencias pueden cambiar al actualizar existencias SICAR.`
+						? `Se actualizarán ${batch.updates} claves existentes y se agregarán ${batch.additions} productos. Se conservarán las cantidades físicas, fechas de conteo y productos ausentes del archivo. Las diferencias pueden cambiar al actualizar existencias.`
 						: 'Se agregarán solo claves nuevas; se conservarán todos los conteos.',
 				'Se guardará un respaldo local previo. ¿Confirmar importación?'
 			]
@@ -275,12 +275,12 @@ export function createInventoryController() {
 		}
 	}
 
-	function exportForSicar(): void {
+	function exportCounts(): void {
 		if (!hydrated || busy) return;
 		try {
-			const rows = createSicarExport(products);
+			const rows = createCountsExport(products);
 			if (!rows.length) {
-				message = 'No hay conteos registrados para exportar a SICAR.';
+				message = 'No hay conteos registrados para exportar.';
 				return;
 			}
 			if (
@@ -293,13 +293,13 @@ export function createInventoryController() {
 			const workbook = XLSX.utils.book_new();
 			XLSX.utils.book_append_sheet(
 				workbook,
-				XLSX.utils.json_to_sheet(rows, { header: [...SICAR_EXPORT_LAYOUT.columns] }),
-				SICAR_EXPORT_LAYOUT.sheet
+				XLSX.utils.json_to_sheet(rows, { header: [...COUNTS_EXPORT_LAYOUT.columns] }),
+				COUNTS_EXPORT_LAYOUT.sheet
 			);
-			XLSX.writeFile(workbook, SICAR_EXPORT_LAYOUT.filename);
-			message = `${rows.length} conteos exportados. Formato provisional Clave/Cantidad: valida la plantilla antes de usarlo en SICAR.`;
+			XLSX.writeFile(workbook, COUNTS_EXPORT_LAYOUT.filename);
+			message = `${rows.length} conteos exportados en formato Clave/Cantidad.`;
 		} catch (error) {
-			message = `No se pudo exportar para SICAR: ${(error as Error).message}`;
+			message = `No se pudo exportar conteos: ${(error as Error).message}`;
 		}
 	}
 
@@ -429,7 +429,7 @@ export function createInventoryController() {
 			'Inventario'
 		);
 		XLSX.writeFile(workbook, 'matre-inventario.xlsx');
-		message = 'Reporte Excel generado; no es un archivo de actualización de SICAR.';
+		message = 'Reporte Excel generado; no es un archivo de actualización del sistema.';
 	}
 
 	function setTheme(next: ThemeMode): void {
@@ -559,7 +559,7 @@ export function createInventoryController() {
 			'No encontrados'
 		);
 		XLSX.writeFile(workbook, 'MATRE_Articulos_no_encontrados.xlsx');
-		message = 'Excel de artículos no encontrados generado por separado del catálogo SICAR.';
+		message = 'Excel de artículos no encontrados generado por separado del catálogo.';
 	}
 
 	return {
@@ -719,7 +719,7 @@ export function createInventoryController() {
 		confirmDataAction,
 		restoreBackup,
 		exportExcel,
-		exportForSicar,
+		exportCounts,
 		setTheme
 	};
 }

@@ -2,7 +2,7 @@
 	import type { InventoryController } from './inventory-controller.svelte';
 	import { Archive, Download, FileSpreadsheet, Upload } from 'lucide-svelte';
 	import CatalogImportPreview from './CatalogImportPreview.svelte';
-	import SicarExportPanel from './SicarExportPanel.svelte';
+	import CountsExportPanel from './CountsExportPanel.svelte';
 
 	let { app }: { app: InventoryController } = $props();
 </script>
@@ -28,9 +28,8 @@
 			</label>
 		</div>
 		<p class="mt-2 text-sm text-zinc-500">
-			Importa Excel (.xls o .xlsx) o CSV. Revisa y asigna las columnas antes de confirmar. No hay
-			una plantilla oficial de SICAR validada; verifica claves y existencias con tu archivo
-			original.
+			Importa Excel (.xls o .xlsx) o CSV. Revisa y asigna las columnas antes de confirmar. Verifica
+			claves y existencias con tu archivo original.
 		</p>
 	</div>
 
@@ -58,7 +57,7 @@
 			class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
 		>
 			<h3 class="mb-3 text-lg font-semibold">Acciones</h3>
-			<SicarExportPanel {app} />
+			<CountsExportPanel {app} />
 			<div class="space-y-2">
 				<button
 					type="button"

@@ -110,8 +110,8 @@ it('reads UTF-8 CSV headers without a BOM and preserves zero-prefixed keys', () 
 	expect(preview.products[0]).toMatchObject({ key: '00001', alternateKey: '00002', expected: 20 });
 });
 
-describe('SICAR catalog fields and safe updates', () => {
-	it('recognizes equivalent SICAR field labels and keeps alternate keys distinct from barcodes', () => {
+describe('catalog fields and safe updates', () => {
+	it('recognizes equivalent catalog field labels and keeps alternate keys distinct from barcodes', () => {
 		const columns = detectColumns([
 			' CLÁVE ',
 			' Clave   alterna ',

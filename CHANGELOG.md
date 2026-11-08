@@ -2,6 +2,16 @@
 
 Todos los cambios notables de la app. Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [0.7.2] - 2026-11-08
+
+### Quitado
+- Todas las referencias visibles a SICAR en la app y en el README: la app ya no menciona ningún sistema externo.
+
+### Cambiado
+- El botón ahora dice "Exportar conteos" y exporta los conteos en formato genérico Clave/Cantidad.
+- La columna "Existencia SICAR" ahora se llama "Existencia" en tarjetas, reportes y vista previa de importación.
+- README corto y genérico, sin detalles del sistema anterior.
+
 ## [0.7.1] - 2026-11-08
 
 ### Mejorado

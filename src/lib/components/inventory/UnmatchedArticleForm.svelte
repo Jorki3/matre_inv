@@ -18,7 +18,7 @@
 		{draft.id ? 'Editar artículo no encontrado' : 'Registrar artículo no encontrado'}
 	</h3>
 	<p class="text-sm text-zinc-500">
-		Registro independiente. No se suma al conteo oficial ni modifica el catálogo SICAR.
+		Registro independiente. No se suma al conteo oficial ni modifica el catálogo.
 	</p>
 	<fieldset disabled={!app.canCount} class="grid gap-3 sm:grid-cols-2">
 		<label class="text-sm sm:col-span-2"
@@ -77,8 +77,8 @@
 				></label
 			>
 			{#if draft.reviewStatus === 'identified'}<label class="text-sm"
-					>Clave principal SICAR relacionada<input
-						aria-label="Clave principal SICAR relacionada"
+					>Clave principal relacionada<input
+						aria-label="Clave principal relacionada"
 						required
 						bind:value={draft.linkedProductKey}
 						list="unmatched-catalog-keys"

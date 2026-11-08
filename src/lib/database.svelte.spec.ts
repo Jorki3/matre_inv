@@ -386,7 +386,7 @@ describe('safe session administration and JSON restore', () => {
 	});
 });
 
-describe('SICAR catalog updates in IndexedDB', () => {
+describe('catalog updates in IndexedDB', () => {
 	it('previews Excel fields, asks for consent and preserves counts and session after an update and reload', async () => {
 		const original = {
 			id: 'real-1',
@@ -442,7 +442,7 @@ describe('SICAR catalog updates in IndexedDB', () => {
 		);
 		const transfer = new DataTransfer();
 		transfer.items.add(
-			new File([XLSX.write(book, { type: 'array', bookType: 'xlsx' })], 'sicar.xlsx')
+			new File([XLSX.write(book, { type: 'array', bookType: 'xlsx' })], 'catalogo.xlsx')
 		);
 		const input = document.querySelector<HTMLInputElement>(
 			'input[aria-label="Importar catálogo"]'
@@ -576,12 +576,12 @@ describe('unmatched article UI and persistence', () => {
 			.getByRole('combobox', { name: 'Estado de revisión', exact: true })
 			.selectOptions('identified');
 		await page
-			.getByRole('combobox', { name: 'Clave principal SICAR relacionada', exact: true })
+			.getByRole('combobox', { name: 'Clave principal relacionada', exact: true })
 			.fill(session.products[0].key);
 		await page.getByRole('button', { name: 'Guardar artículo', exact: true }).click();
 		await expect
 			.element(page.getByTestId('unmatched-card'))
-			.toHaveTextContent('Identificado en SICAR');
+			.toHaveTextContent('Identificado en catálogo');
 		db.close();
 		await db.open();
 		const saved = await loadInventoryState();

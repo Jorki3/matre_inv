@@ -52,7 +52,7 @@ function withoutLeadingZero(code: string): string {
 /**
  * Todos los códigos de un producto, normalizados y sin duplicados:
  * primero la clave alterna (casi siempre el EAN impreso en el
- * empaque), luego el barcode heredado y luego la clave SICAR.
+ * empaque), luego el barcode heredado y luego la clave principal.
  */
 export function productBarcodes(product: Product): string[] {
 	const codes: string[] = [];

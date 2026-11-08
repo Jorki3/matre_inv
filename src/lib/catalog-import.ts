@@ -9,14 +9,14 @@ export const importFields = [
 	{ id: 'key', label: 'Clave (obligatoria)' },
 	{ id: 'alternateKey', label: 'Clave alterna (opcional)' },
 	{ id: 'name', label: 'Descripción (obligatoria)' },
-	{ id: 'expected', label: 'Existencia actual / SICAR (obligatoria)' },
+	{ id: 'expected', label: 'Existencia (obligatoria)' },
 	{ id: 'category', label: 'Categoría / Departamento (opcional)' },
 	{ id: 'unit', label: 'Unidad de medida (opcional)' }
 ] as const;
 
 const normalizeHeader = (value: unknown) =>
 	normalizeText(String(value ?? '')).replace(/[^a-z0-9]/g, '');
-// Generic aliases, not a validated official SICAR template.
+// Generic aliases for common catalog headers.
 const aliases = {
 	key: ['clave', 'claveprincipal', 'claveinterna', 'sku', 'internalkey'],
 	alternateKey: ['clavealterna', 'clavealternativa', 'codigoalterno'],

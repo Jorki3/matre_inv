@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
-import { createSicarExport, SICAR_EXPORT_LAYOUT } from './sicar-export';
+import { createCountsExport, COUNTS_EXPORT_LAYOUT } from './counts-export';
 import { applyPhysicalCount, createSeedCatalog } from './inventory';
 
-describe('provisional SICAR export', () => {
+describe('counts export', () => {
 	it('writes only main key and physical quantity, including counted zero and excluding pending products', () => {
 		const catalog = createSeedCatalog().slice(0, 3);
 		const products = [
@@ -11,7 +11,7 @@ describe('provisional SICAR export', () => {
 			applyPhysicalCount(catalog[1], 5),
 			catalog[2]
 		];
-		const rows = createSicarExport(products);
+		const rows = createCountsExport(products);
 		expect(rows).toEqual([
 			{ Clave: '00001', Cantidad: 0 },
 			{ Clave: catalog[1].key, Cantidad: 5 }
@@ -19,13 +19,13 @@ describe('provisional SICAR export', () => {
 		const book = XLSX.utils.book_new();
 		XLSX.utils.book_append_sheet(
 			book,
-			XLSX.utils.json_to_sheet(rows, { header: [...SICAR_EXPORT_LAYOUT.columns] }),
-			SICAR_EXPORT_LAYOUT.sheet
+			XLSX.utils.json_to_sheet(rows, { header: [...COUNTS_EXPORT_LAYOUT.columns] }),
+			COUNTS_EXPORT_LAYOUT.sheet
 		);
 		const read = XLSX.read(XLSX.write(book, { type: 'array', bookType: 'xlsx' }), {
 			type: 'array'
 		});
-		const sheet = read.Sheets[SICAR_EXPORT_LAYOUT.sheet];
+		const sheet = read.Sheets[COUNTS_EXPORT_LAYOUT.sheet];
 		expect(XLSX.utils.sheet_to_json(sheet, { header: 1 })).toEqual([
 			['Clave', 'Cantidad'],
 			['00001', 0],
@@ -37,10 +37,10 @@ describe('provisional SICAR export', () => {
 
 	it('does not turn pending zeros into counts and rejects invalid or duplicate counted keys', () => {
 		const product = createSeedCatalog()[0];
-		expect(createSicarExport([product])).toEqual([]);
+		expect(createCountsExport([product])).toEqual([]);
 		const counted = applyPhysicalCount(product, 0);
-		expect(() => createSicarExport([{ ...counted, physical: NaN }])).toThrow('inválida');
-		expect(() => createSicarExport([counted, { ...counted, id: 'duplicate' }])).toThrow(
+		expect(() => createCountsExport([{ ...counted, physical: NaN }])).toThrow('inválida');
+		expect(() => createCountsExport([counted, { ...counted, id: 'duplicate' }])).toThrow(
 			'duplicadas'
 		);
 	});

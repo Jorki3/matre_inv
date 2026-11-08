@@ -134,7 +134,7 @@ export interface ProductFraction {
 
 /**
  * Fracciones en el nombre del producto. "1/2" es media pulgada y
- * "11/2" / "21/2" son mixtas: 1 1/2 y 2 1/2 (así las escribe SICAR:
+ * "11/2" / "21/2" son mixtas: 1 1/2 y 2 1/2 (así aparecen en el catálogo:
  * Brocha 038mm 11/2, Brocha 064mm 21/2). Se devuelven ambas lecturas
  * para la mixta, por si algún catálogo usa 11/2 como once medios.
  */
@@ -312,7 +312,9 @@ export function countTokenMatches(product: Product, tokens: string[]): number {
 			if (numberMatchesToken(token, product)) count += 1;
 		} else if (wordMatchesToken(token, productNameTokens(product))) {
 			count += 1;
-		} else if (token.length >= 3 && productCodeTokens(product).some((code) => code === token)) {
+		} else if (token.length >= 2 && productCodeTokens(product).some((code) => code === token)) {
+			// Códigos: coincidencia exacta con el token completo; 2 letras bastan
+			// porque no es subcadena (un "a1" solo casa con la clave "a1").
 			count += 1;
 		}
 	}
@@ -572,7 +574,7 @@ export function exportRows(products: Product[]) {
 		Clave: product.key,
 		'Clave alterna': product.alternateKey ?? product.barcode ?? '',
 		Descripción: product.name,
-		'Existencia SICAR': product.expected,
+		'Existencia': product.expected,
 		'Cantidad física': product.countedAt ? product.physical : null,
 		Diferencia: product.countedAt ? calculateDifference(product.physical, product.expected) : null,
 		Estado: { pending: 'Pendiente', counted: 'Contado', difference: 'Con diferencia' }[

@@ -138,7 +138,7 @@ describe('reliable counting and sessions', () => {
 	});
 
 	it('restores legacy barcode backups and reconciles counted values from both old arrays without mutating input', () => {
-		const product = { ...createSeedCatalog()[0], source: 'SICAR', barcode: '000123' };
+		const product = { ...createSeedCatalog()[0], source: 'importado', barcode: '000123' };
 		const old = {
 			id: 'old',
 			version: 1,
@@ -173,7 +173,7 @@ describe('reliable counting and sessions', () => {
 });
 
 describe('session renewal and portable backups', () => {
-	it('resets only counts and timestamps, preserving SICAR fields and session identity', () => {
+	it('resets only counts and timestamps, preserving catalog fields and session identity', () => {
 		const catalog = createSeedCatalog()
 			.slice(0, 2)
 			.map((product) => ({

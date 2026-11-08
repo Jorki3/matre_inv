@@ -8,12 +8,11 @@
 		type="button"
 		class="min-h-11 w-full rounded-xl bg-red-600 px-4 py-2 text-left text-sm font-medium text-white disabled:opacity-50"
 		disabled={!app.hydrated || app.busy || !app.metrics.counted}
-		onclick={app.exportForSicar}>Exportar para SICAR</button
+		onclick={app.exportCounts}>Exportar conteos</button
 	>
 	<p class="text-sm text-zinc-500">
-		Excel con solo Clave principal y Cantidad física de los productos contados, incluidos ceros
-		registrados. Formato provisional: se ajustará al validar una plantilla real de importación. No
-		modifica SICAR.
+		Excel con solo Clave principal y Cantidad física de los productos contados, incluidos los ceros
+		registrados. Los pendientes no se incluyen en este archivo.
 	</p>
 	{#if app.metrics.pending}<p class="text-sm text-red-600">
 			Quedan {app.metrics.pending} productos pendientes: no se incluirán en este archivo.

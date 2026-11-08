@@ -28,7 +28,8 @@
 			Última edición: {new Date(article.updatedAt).toLocaleString()}
 		</p>{/if}
 	{#if article.linkedProductKey}<p class="text-sm">
-			Relacionado con SICAR: {article.linkedProductKey}. Cantidad no incorporada al conteo oficial.
+			Relacionado con el catálogo: {article.linkedProductKey}. Cantidad no incorporada al conteo
+			oficial.
 		</p>{/if}
 	{#if editable}<div class="flex gap-2">
 			<button

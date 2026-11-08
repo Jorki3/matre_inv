@@ -60,8 +60,8 @@
 			</p>
 			<p class="mt-2 text-sm">
 				Se conservarán los {app.products.length} productos con su clave, clave alterna, descripción y
-				existencia SICAR. Se reiniciarán las estadísticas y el progreso. Los artículos no encontrados
-				se conservarán asociados a su sesión original.
+				existencia. Se reiniciarán las estadísticas y el progreso. Los artículos no encontrados se conservarán
+				asociados a su sesión original.
 			</p>
 		{/if}
 		<p class="mt-3 text-sm text-zinc-600 dark:text-zinc-300">

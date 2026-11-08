@@ -1,13 +1,13 @@
 import { normalizeText, type Product } from './inventory';
 
-// Provisional exchange layout. Adjust here once a real SICAR import template is validated.
-export const SICAR_EXPORT_LAYOUT = {
+// Export layout for counted products: main key and physical quantity only.
+export const COUNTS_EXPORT_LAYOUT = {
 	columns: ['Clave', 'Cantidad'] as const,
 	sheet: 'Conteo',
-	filename: 'MATRE_Conteo_para_SICAR.xlsx'
+	filename: 'MATRE_Conteo.xlsx'
 };
 
-export function createSicarExport(products: Product[]): { Clave: string; Cantidad: number }[] {
+export function createCountsExport(products: Product[]): { Clave: string; Cantidad: number }[] {
 	const keys = new Set<string>();
 	return products
 		.filter((product) => Boolean(product.countedAt))
