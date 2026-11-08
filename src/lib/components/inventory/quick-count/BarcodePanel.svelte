@@ -1,6 +1,6 @@
 <!--
-  Escaneo de código de barras por cámara, como panel colapsable de la
-  barra de conteo rápido. API nativa BarcodeDetector (Chrome en Android),
+  Escaneo de código de barras por cámara, como panel desplegable debajo
+  de la barra de búsqueda. API nativa BarcodeDetector (Chrome en Android),
   sin dependencias nuevas. El código no trae cantidad: arranca en 1 y se
   ajusta con + / -. Nada se guarda hasta Confirmar conteo.
 -->
