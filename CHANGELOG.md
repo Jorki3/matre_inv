@@ -2,6 +2,16 @@
 
 Todos los cambios notables de la app. Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [0.6.0] - 2026-11-08
+
+### Añadido
+- Contar rápido: una sola barra compacta con Voz, Código y Escribir; el panel solo se abre al usarlo y se cierra al confirmar o cancelar.
+- El dictado por voz y el escaneo de código de barras respetan el filtro activo (Todos, Pendientes, Contados, Diferencias, Sin diferencias); si el producto está fuera del filtro, avisa y ofrece ver todos.
+- Historial compartido de la sesión: solo los últimos 3 registros, con "Ver todos" para expandir.
+
+### Corregido
+- La cámara del escaneo de código de barras no abría tras permitir el permiso: el video se montaba después de pedir la cámara y se cerraba sola sin aviso.
+
 ## [0.5.0] - 2026-11-08
 
 ### Añadido

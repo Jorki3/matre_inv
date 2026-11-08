@@ -2,8 +2,7 @@
 	import type { InventoryController } from './inventory-controller.svelte';
 	import SessionControls from './SessionControls.svelte';
 	import ProductSearch from './ProductSearch.svelte';
-	import VoiceCount from './VoiceCount.svelte';
-	import BarcodeScan from './BarcodeScan.svelte';
+	import QuickCountBar from './quick-count/QuickCountBar.svelte';
 	import ProductCard from './ProductCard.svelte';
 
 	let { app }: { app: InventoryController } = $props();
@@ -12,8 +11,7 @@
 <section class="space-y-3" aria-label="Conteo de inventario">
 	<SessionControls {app} />
 	<ProductSearch {app} />
-	<VoiceCount {app} />
-	<BarcodeScan {app} />
+	<QuickCountBar {app} />
 	{#if app.visibleProducts.length || !app.query.trim()}<button
 			type="button"
 			disabled={!app.canCount}
