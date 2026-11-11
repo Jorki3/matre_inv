@@ -2,6 +2,14 @@
 
 Todos los cambios notables de la app. Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [0.10.1] - 2026-11-11
+
+### Cambiado
+
+- Workflow de publicación trasladado a `publish.yml`, con nombre y grupo de concurrencia independientes para recuperar la publicación bloqueada antes de iniciar trabajos en GitHub Actions.
+- Se conservan los pasos de compilación, la ruta de GitHub Pages y los permisos existentes.
+- Versión visible 0.10.1 y caché PWA v17. Sin cambios en el modelo de inventario ni en las tablas de IndexedDB.
+
 ## [0.10.0] - 2026-11-11
 
 ### Añadido

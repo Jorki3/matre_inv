@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Publish MATRE to GitHub Pages
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: matre-pages-publish-v2
   cancel-in-progress: true
 
 jobs:
