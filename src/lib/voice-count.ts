@@ -268,10 +268,7 @@ export function parseNumberWords(
 }
 
 /** Lee un número (dígitos o palabras) en `tokens[i]`, si lo hay. */
-function readNumber(
-	tokens: string[],
-	i: number
-): { value: number; consumed: number } | null {
+function readNumber(tokens: string[], i: number): { value: number; consumed: number } | null {
 	if (i >= tokens.length) return null;
 	if (isDigitToken(tokens[i])) return { value: Number(tokens[i]), consumed: 1 };
 	const parsed = parseNumberWords(tokens, i);
@@ -363,9 +360,7 @@ export function findCandidates(
 
 	for (const product of products) {
 		const matchedTokens = countTokenMatches(product, descriptionTokens);
-		const measuresMatched = measures.filter((measure) =>
-			measureMatches(product, measure)
-		).length;
+		const measuresMatched = measures.filter((measure) => measureMatches(product, measure)).length;
 		const measuresOk = measures.every((measure) => measureMatches(product, measure));
 		if (matchedTokens === 0 && measuresMatched === 0) continue;
 		const exact =
@@ -594,9 +589,7 @@ export function parseVoiceCount(transcript: string, products: Product[]): VoiceI
 		}
 	}
 
-	const descriptionTokens = rawTokens.filter(
-		(token, i) => !consumed[i] && !STOPWORDS.has(token)
-	);
+	const descriptionTokens = rawTokens.filter((token, i) => !consumed[i] && !STOPWORDS.has(token));
 	const description = descriptionTokens.join(' ');
 	const candidates = findCandidates(products, descriptionTokens, measures);
 	let exactCandidate = candidates.find((candidate) => candidate.exact);

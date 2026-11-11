@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { version } from '../../../../package.json';
 	import type { InventoryController } from './inventory-controller.svelte';
 	import { Moon, SunMedium } from 'lucide-svelte';
 
@@ -6,13 +7,17 @@
 </script>
 
 <header
-	class="mb-3 rounded-2xl border border-zinc-200 bg-white/80 p-3 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80"
+	class="mb-2 rounded-xl border border-zinc-200 bg-white/80 p-2 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80"
 >
 	<div class="flex items-center justify-between gap-3">
 		<div>
-			<p class="text-xs font-medium tracking-[0.2em] text-zinc-500 uppercase">MATRE Ferretería</p>
-			<h1 class="text-xl font-semibold">
-				MATRE Inventario <span class="align-middle text-xs font-medium text-zinc-400">v0.9.0</span>
+			<p class="hidden text-xs font-medium tracking-[0.2em] text-zinc-500 uppercase sm:block">
+				MATRE Ferretería
+			</p>
+			<h1 class="text-lg font-semibold sm:text-xl">
+				MATRE Inventario <span class="align-middle text-xs font-medium text-zinc-400"
+					>v{version}</span
+				>
 			</h1>
 			<!-- Versión de la app: actualizar junto con package.json -->
 		</div>

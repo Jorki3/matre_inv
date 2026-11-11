@@ -179,7 +179,7 @@ describe('unmatched articles', () => {
 		const session = activeSession();
 		const items = saveUnmatchedArticle(session, [], draft(), session.products, 'F', now);
 		const backup = createInventoryExport(session.products, session, [], items);
-		expect(backup.version).toBe(3);
+		expect(backup.version).toBe(5);
 		expect(validateBackup(JSON.parse(JSON.stringify(backup))).value?.unmatchedArticles).toEqual(
 			items
 		);

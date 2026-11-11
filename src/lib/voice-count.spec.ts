@@ -126,16 +126,66 @@ describe('parseVoiceCount', () => {
 import { searchProducts } from './inventory';
 
 const brochas: Product[] = [
-	product({ id: 'B-125', name: 'Brocha practica 125mm 5 exito', key: '19AH963028', alternateKey: '7500112842497' }),
-	product({ id: 'B-075', name: 'Brocha practica 075mm 3 exito', key: '19AH963026', alternateKey: '7500112842473' }),
-	product({ id: 'B-110', name: 'Brocha practica 110mm 4 exito', key: '19AH963027', alternateKey: '7500112842480' }),
-	product({ id: 'B-013', name: 'Brocha practica 013mm 1/2 exito', key: '19AH963021', alternateKey: '7500112842428' }),
-	product({ id: 'B-025', name: 'Brocha practica 025mm 1 exito', key: '19AH963022', alternateKey: '7500112842435' }),
-	product({ id: 'B-038', name: 'Brocha practica 038mm 11/2 exito', key: '19AH963023', alternateKey: '7500112842442' }),
-	product({ id: 'B-050', name: 'Brocha practica 050mm 2 exito', key: '19AH963024', alternateKey: '7500112842459' }),
-	product({ id: 'B-064', name: 'Brocha practica 064mm 21/2 exito', key: '19AH963025', alternateKey: '7500112842466' }),
-	product({ id: 'B-160', name: 'Brocha practica 160mm 6 exito', key: '19AH963029', alternateKey: '7500112842503' }),
-	product({ id: 'L-1', name: 'Lubricante en aerosol 110ml Zoms', key: 'A-AZ110', alternateKey: '7502293080002' })
+	product({
+		id: 'B-125',
+		name: 'Brocha practica 125mm 5 exito',
+		key: '19AH963028',
+		alternateKey: '7500112842497'
+	}),
+	product({
+		id: 'B-075',
+		name: 'Brocha practica 075mm 3 exito',
+		key: '19AH963026',
+		alternateKey: '7500112842473'
+	}),
+	product({
+		id: 'B-110',
+		name: 'Brocha practica 110mm 4 exito',
+		key: '19AH963027',
+		alternateKey: '7500112842480'
+	}),
+	product({
+		id: 'B-013',
+		name: 'Brocha practica 013mm 1/2 exito',
+		key: '19AH963021',
+		alternateKey: '7500112842428'
+	}),
+	product({
+		id: 'B-025',
+		name: 'Brocha practica 025mm 1 exito',
+		key: '19AH963022',
+		alternateKey: '7500112842435'
+	}),
+	product({
+		id: 'B-038',
+		name: 'Brocha practica 038mm 11/2 exito',
+		key: '19AH963023',
+		alternateKey: '7500112842442'
+	}),
+	product({
+		id: 'B-050',
+		name: 'Brocha practica 050mm 2 exito',
+		key: '19AH963024',
+		alternateKey: '7500112842459'
+	}),
+	product({
+		id: 'B-064',
+		name: 'Brocha practica 064mm 21/2 exito',
+		key: '19AH963025',
+		alternateKey: '7500112842466'
+	}),
+	product({
+		id: 'B-160',
+		name: 'Brocha practica 160mm 6 exito',
+		key: '19AH963029',
+		alternateKey: '7500112842503'
+	}),
+	product({
+		id: 'L-1',
+		name: 'Lubricante en aerosol 110ml Zoms',
+		key: 'A-AZ110',
+		alternateKey: '7502293080002'
+	})
 ];
 
 describe('brochas: media pulgada es 1/2 y el Lubricante no aparece', () => {
@@ -146,9 +196,9 @@ describe('brochas: media pulgada es 1/2 y el Lubricante no aparece', () => {
 		expect(result.product?.key).toBe('19AH963021');
 		expect(result.exact).toBe(true);
 		expect(result.candidates.every((c) => c.product.key !== 'A-AZ110')).toBe(true);
-		expect(
-			result.candidates.some((c) => !c.exact && c.product.name.startsWith('Brocha'))
-		).toBe(true);
+		expect(result.candidates.some((c) => !c.exact && c.product.name.startsWith('Brocha'))).toBe(
+			true
+		);
 	});
 
 	it('"brocha 1 1/2, 2 piezas" escrita por separado -> Brocha 038mm 11/2 exact', () => {

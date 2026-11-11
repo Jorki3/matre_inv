@@ -47,6 +47,7 @@
 	let selectedProductId = $state<string | null>(null);
 	let quantityDraft = $state<number | undefined>(undefined);
 	let error = $state('');
+	const voiceExample = 'Ej. "Rondana plana de 5 16, 100 piezas"';
 	let typedText = $state('');
 	let unmatchedLocation = $state('');
 
@@ -152,9 +153,11 @@
 	</PanelHeader>
 
 	{#if !voice.supported}
-		<p class="rounded-xl border border-amber-500 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-			Este navegador no soporta dictado por voz. Usa el cuadro de texto o las frases de
-			ejemplo de abajo.
+		<p
+			class="rounded-xl border border-amber-500 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+		>
+			Este navegador no soporta dictado por voz. Usa el cuadro de texto o las frases de ejemplo de
+			abajo.
 		</p>
 	{/if}
 	{#if voice.listening}
@@ -165,7 +168,7 @@
 		<input
 			bind:value={typedText}
 			aria-label="Texto dictado para probar sin micrófono"
-			placeholder='Ej. "Rondana plana de 5 16, 100 piezas"'
+			placeholder={voiceExample}
 			class="min-h-11 flex-1 rounded-xl border border-zinc-300 bg-transparent px-3 text-base dark:border-zinc-700"
 		/>
 		<button

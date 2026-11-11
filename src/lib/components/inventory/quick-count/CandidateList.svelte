@@ -29,9 +29,11 @@
 		{onselect}
 	/>
 {:else if showNotFound}
-	<p class="rounded-xl border border-amber-500 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-		No encontré ese producto exacto en el catálogo. Puedes elegir un parecido de
-		abajo o registrarlo como artículo no encontrado.
+	<p
+		class="rounded-xl border border-amber-500 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+	>
+		No encontré ese producto exacto en el catálogo. Puedes elegir un parecido de abajo o registrarlo
+		como artículo no encontrado.
 	</p>
 {/if}
 

@@ -157,9 +157,11 @@
 	</PanelHeader>
 
 	{#if !camera.supported}
-		<p class="rounded-xl border border-amber-500 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-			Este navegador no detecta códigos con la cámara. Usa el cuadro de abajo para
-			escribir el código a mano.
+		<p
+			class="rounded-xl border border-amber-500 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+		>
+			Este navegador no detecta códigos con la cámara. Usa el cuadro de abajo para escribir el
+			código a mano.
 		</p>
 	{/if}
 
@@ -217,10 +219,11 @@
 					onselect={() => {}}
 				/>
 			{:else}
-				<p class="rounded-xl border border-amber-500 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-					No encontré ese código en el catálogo. Puede ser un producto sin
-					código registrado o un código nuevo: regístralo como artículo no
-					encontrado y se revisa después.
+				<p
+					class="rounded-xl border border-amber-500 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+				>
+					No encontré ese código en el catálogo. Puede ser un producto sin código registrado o un
+					código nuevo: regístralo como artículo no encontrado y se revisa después.
 				</p>
 			{/if}
 		{/snippet}

@@ -113,6 +113,7 @@ describe('IndexedDB and mobile counting', () => {
 		render(App);
 		await page.getByRole('button', { name: 'Inventario', exact: true }).click();
 		await expect.element(page.getByRole('button', { name: 'Comenzar', exact: true })).toBeEnabled();
+		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
 		await page.getByRole('button', { name: 'Productos', exact: true }).click();
 		const input = document.querySelector<HTMLInputElement>(
 			'input[aria-label="Importar catálogo"]'
@@ -289,6 +290,7 @@ describe('safe session administration and JSON restore', () => {
 		const previous = await mountCounted('paused');
 		await db.backups.put(createInventoryExport(previous.products, previous));
 		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
+		await page.getByRole('button', { name: 'Datos', exact: true }).click();
 		await page.getByRole('button', { name: 'Reiniciar conteo', exact: true }).click();
 		const dialog = page.getByRole('dialog');
 		await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
@@ -310,6 +312,7 @@ describe('safe session administration and JSON restore', () => {
 	it('keeps original counts and shows the storage error inside the confirmation dialog', async () => {
 		const original = await mountCounted('paused');
 		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
+		await page.getByRole('button', { name: 'Datos', exact: true }).click();
 		await page.getByRole('button', { name: 'Reiniciar conteo', exact: true }).click();
 		const dialog = page.getByRole('dialog');
 		await dialog.getByRole('checkbox').click();
@@ -332,7 +335,8 @@ describe('safe session administration and JSON restore', () => {
 
 	it('rejects invalid JSON and previews a valid legacy backup before replacing existing data', async () => {
 		const original = await mountCounted('completed');
-		await page.getByRole('button', { name: 'Respaldo', exact: true }).click();
+		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
+		await page.getByRole('button', { name: 'Respaldos', exact: true }).click();
 		uploadBackup({ version: 99 });
 		await expect.element(page.getByRole('status')).toHaveTextContent('No se pudo restaurar');
 		expect((await loadInventoryState()).session.id).toBe(original.id);
@@ -392,6 +396,7 @@ describe('safe session administration and JSON restore', () => {
 		await page.getByRole('button', { name: 'Inventario', exact: true }).click();
 		await expect.element(page.getByRole('button', { name: 'Comenzar', exact: true })).toBeEnabled();
 		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
+		await page.getByRole('button', { name: 'Respaldos', exact: true }).click();
 		uploadBackup(backup);
 		const dialog = page.getByRole('dialog');
 		await expect.element(dialog).toHaveTextContent('No hay productos ni conteos locales');
@@ -446,6 +451,7 @@ describe('catalog updates in IndexedDB', () => {
 		render(App);
 		await page.getByRole('button', { name: 'Inventario', exact: true }).click();
 		await expect.element(page.getByTestId('session-status')).toHaveTextContent('Pausado');
+		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
 		await page.getByRole('button', { name: 'Productos', exact: true }).click();
 		const book = XLSX.utils.book_new();
 		XLSX.utils.book_append_sheet(
@@ -525,6 +531,7 @@ describe('catalog updates in IndexedDB', () => {
 		render(App);
 		await page.getByRole('button', { name: 'Inventario', exact: true }).click();
 		await expect.element(page.getByRole('button', { name: 'Comenzar', exact: true })).toBeEnabled();
+		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
 		await page.getByRole('button', { name: 'Productos', exact: true }).click();
 		const transfer = new DataTransfer();
 		transfer.items.add(new File(['Clave,Producto,Existencia actual\n00001,Real,0'], 'real.csv'));
@@ -657,6 +664,7 @@ describe('unmatched article UI and persistence', () => {
 			state.unmatchedArticles
 		);
 		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
+		await page.getByRole('button', { name: 'Datos', exact: true }).click();
 		await page.getByRole('button', { name: 'Reiniciar conteo', exact: true }).click();
 		await page.getByRole('dialog').getByRole('checkbox').click();
 		await page
@@ -674,6 +682,7 @@ describe('unmatched article UI and persistence', () => {
 		} finally {
 			consent.mockRestore();
 		}
+		await page.getByRole('button', { name: 'Inventario', exact: true }).click();
 		await page.getByRole('button', { name: 'Artículos no encontrados', exact: true }).click();
 		await expect.element(page.getByTestId('unmatched-card')).toHaveTextContent('Artículo especial');
 		await expect
@@ -690,6 +699,7 @@ describe('unmatched article UI and persistence', () => {
 		const next = await loadInventoryState();
 		expect(next.session.id).not.toBe(session.id);
 		expect(next.unmatchedArticles).toHaveLength(1);
+		await page.getByRole('button', { name: 'Inventario', exact: true }).click();
 		await page.getByRole('button', { name: 'Artículos no encontrados', exact: true }).click();
 		await expect
 			.element(page.getByText('0 registros de esta sesión', { exact: false }))
@@ -698,7 +708,8 @@ describe('unmatched article UI and persistence', () => {
 			.getByRole('combobox', { name: 'Sesión de los hallazgos', exact: true })
 			.selectOptions(session.id);
 		await expect.element(page.getByTestId('unmatched-card')).toHaveTextContent('Artículo especial');
-		await page.getByRole('button', { name: 'Respaldo', exact: true }).click();
+		await page.getByRole('button', { name: 'Configuración', exact: true }).click();
+		await page.getByRole('button', { name: 'Respaldos', exact: true }).click();
 		uploadBackup(backup);
 		await page.getByRole('dialog').getByRole('checkbox').click();
 		await page

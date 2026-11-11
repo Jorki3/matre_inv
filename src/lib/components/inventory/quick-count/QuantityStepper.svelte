@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { Minus, Plus } from 'lucide-svelte';
 
-	let { quantity = $bindable(), disabled = false }: { quantity: number | undefined; disabled?: boolean } =
-		$props();
+	let {
+		quantity = $bindable(),
+		disabled = false
+	}: { quantity: number | undefined; disabled?: boolean } = $props();
 </script>
 
 <div>

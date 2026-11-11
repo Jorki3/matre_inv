@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { InventoryController } from './inventory-controller.svelte';
 	import BackupActions from './BackupActions.svelte';
+	import MergePanel from './MergePanel.svelte';
 
 	let { app }: { app: InventoryController } = $props();
 </script>
@@ -27,9 +28,10 @@
 					>
 				</div>
 				<div class="flex justify-between rounded-xl bg-zinc-100 p-3 dark:bg-zinc-800">
-					<span>Versión del respaldo</span><span>3 (compatible con 1 y 2)</span>
+					<span>Versión del respaldo</span><span>5 (compatible con 1–4)</span>
 				</div>
 			</div>
 		</div>
 	</div>
+	<MergePanel {app} />
 </section>

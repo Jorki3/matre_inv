@@ -1,3 +1,9 @@
+import {
+	confirmInventoryMerge,
+	previewInventoryMerge,
+	validateMergeBackup,
+	type MergeInput
+} from '$lib/inventory-merge';
 import { readMovementFile } from '$lib/movement-import';
 import {
 	auditReconciliation,
@@ -54,6 +60,7 @@ import {
 	loadLatestBackup,
 	persistTheme,
 	readStoredTheme,
+	readWorkInstanceId,
 	saveInventoryState
 } from '$lib/database';
 import { createCountsExport, COUNTS_EXPORT_LAYOUT } from '$lib/counts-export';
@@ -71,6 +78,11 @@ import { navItems, filters, type DataAction } from './inventory-ui';
 export function createInventoryController() {
 	let theme = $state<ThemeMode>('system');
 	let activeView = $state<(typeof navItems)[number]['id']>('dashboard');
+	let settingsSection = $state<'general' | 'products' | 'backups' | 'data'>('general');
+	let inventorySection = $state<'products' | 'unmatched'>('products');
+	let instanceId = $state('');
+	let mergeInputs = $state<MergeInput[]>([]);
+	let mergeError = $state('');
 	let query = $state('');
 	let filter = $state<(typeof filters)[number]['id']>('all');
 	let products = $state<Product[]>([]);
@@ -103,6 +115,21 @@ export function createInventoryController() {
 	let unmatchedQuery = $state('');
 	let unmatchedDraft = $state<UnmatchedDraft | null>(null);
 	let unmatchedError = $state('');
+	const mergePreview = $derived(
+		mergeInputs.length
+			? previewInventoryMerge(
+					createInventoryExport(
+						products,
+						{ ...session, products },
+						movements,
+						unmatchedArticles,
+						instanceId
+					),
+					mergeInputs,
+					instanceId
+				)
+			: null
+	);
 	const currentUnmatched = $derived(
 		unmatchedArticles.filter((article) => article.sessionId === session.id)
 	);
@@ -181,6 +208,7 @@ export function createInventoryController() {
 			const savedRevision = await saveInventoryState(
 				{
 					id: 'main',
+					instanceId,
 					session: $state.snapshot(next),
 					catalog: $state.snapshot(next.products),
 					lastSavedAt: new SvelteDate().toISOString(),
@@ -232,7 +260,14 @@ export function createInventoryController() {
 		try {
 			const quantity = countDraft;
 			unmatchedError = '';
-			const counted = countInSession({ ...session, products }, product.id, quantity, operation);
+			const counted = countInSession(
+				{ ...session, products },
+				product.id,
+				quantity,
+				operation,
+				new SvelteDate().toISOString(),
+				instanceId
+			);
 			const next = session.importedMovements?.length
 				? auditReconciliation(session, reconcileMovements(counted))
 				: counted;
@@ -375,7 +410,9 @@ export function createInventoryController() {
 
 	async function exportJsonBackup(): Promise<void> {
 		if (!hydrated || busy) return;
-		downloadJson(createInventoryExport(products, session, movements, unmatchedArticles));
+		downloadJson(
+			createInventoryExport(products, session, movements, unmatchedArticles, instanceId)
+		);
 		if (await commit({ ...session, products }, false, new SvelteDate().toISOString()))
 			message = 'Respaldo JSON listo para descargar.';
 	}
@@ -444,6 +481,7 @@ export function createInventoryController() {
 				importFile = '';
 				headers = [];
 				cancelMovementImport();
+				cancelMerge();
 				message =
 					action.kind === 'restore'
 						? 'Respaldo restaurado con sus conteos y estado de sesión.'
@@ -451,7 +489,10 @@ export function createInventoryController() {
 							? 'Nuevo inventario preparado. Catálogo conservado; presiona Comenzar cuando estés listo.'
 							: 'Conteos reiniciados. Catálogo conservado; sesión Sin iniciar.';
 				cancelDataAction();
-				if (action.kind !== 'restore') activeView = 'inventory';
+				if (action.kind !== 'restore') {
+					activeView = 'inventory';
+					inventorySection = 'products';
+				}
 			} else {
 				actionError = message;
 			}
@@ -502,6 +543,7 @@ export function createInventoryController() {
 				theme = readStoredTheme();
 				applyTheme(theme);
 				const saved = await loadInventoryState();
+				instanceId = saved.instanceId ?? readWorkInstanceId();
 				storageRevision = saved.revision ?? 0;
 				products = saved.catalog;
 				session = saved.session;
@@ -522,7 +564,7 @@ export function createInventoryController() {
 
 	function downloadCurrentBackup(container?: HTMLElement): void {
 		downloadJson(
-			createInventoryExport(products, session, movements, unmatchedArticles),
+			createInventoryExport(products, session, movements, unmatchedArticles, instanceId),
 			backupFilename(),
 			container
 		);
@@ -604,11 +646,67 @@ export function createInventoryController() {
 			);
 			if (await commit(next, true)) {
 				cancelMovementImport();
+				cancelMerge();
 				message =
 					'Movimientos guardados y conciliación registrada. Los casos pendientes conservan su motivo de revisión.';
 			} else movementError = message;
 		} catch (error) {
 			movementError = (error as Error).message;
+		}
+	}
+
+	async function handleMergeFiles(event: Event): Promise<void> {
+		const input = event.target as HTMLInputElement;
+		const files = Array.from(input.files ?? []);
+		input.value = '';
+		if (!files.length || !hydrated || busy) return;
+		mergeInputs = [];
+		mergeError = '';
+		try {
+			const parsed: MergeInput[] = [];
+			for (const file of files) {
+				if (file.size > 32 * 1024 * 1024) throw new Error(`${file.name}: el archivo excede 32 MB.`);
+				parsed.push({
+					filename: file.name,
+					snapshot: validateMergeBackup(JSON.parse(await file.text()))
+				});
+			}
+			mergeInputs = parsed;
+		} catch (error) {
+			mergeError = (error as Error).message;
+		}
+	}
+	function cancelMerge(): void {
+		if (!busy) {
+			mergeInputs = [];
+			mergeError = '';
+		}
+	}
+	async function confirmMerge(): Promise<void> {
+		if (!canCount || !mergeInputs.length || mergePreview?.errors.length) return;
+		try {
+			const next = confirmInventoryMerge(
+				createInventoryExport(
+					products,
+					{ ...session, products },
+					movements,
+					unmatchedArticles,
+					instanceId
+				),
+				mergeInputs,
+				instanceId
+			);
+			if (
+				await commit(next.session, true, lastBackupAt, next.movements, next.unmatchedArticles ?? [])
+			) {
+				cancelMerge();
+				selectedProductId = null;
+				countDraft = undefined;
+				message =
+					'Fusión guardada. Los conflictos requieren un nuevo recuento físico y no se exportarán como definitivos.';
+			} else mergeError = message;
+		} catch (error) {
+			mergeError = (error as Error).message;
 		}
 	}
 
@@ -638,7 +736,8 @@ export function createInventoryController() {
 					reviewStatus: 'pending',
 					linkedProductKey: ''
 				};
-		activeView = 'unmatched';
+		activeView = 'inventory';
+		inventorySection = 'unmatched';
 	}
 
 	function cancelUnmatchedRegistration(): void {
@@ -702,6 +801,30 @@ export function createInventoryController() {
 	}
 
 	return {
+		get settingsSection() {
+			return settingsSection;
+		},
+		set settingsSection(value: 'general' | 'products' | 'backups' | 'data') {
+			settingsSection = value;
+		},
+		get inventorySection() {
+			return inventorySection;
+		},
+		set inventorySection(value: 'products' | 'unmatched') {
+			inventorySection = value;
+		},
+		get instanceId() {
+			return instanceId;
+		},
+		get mergePreview() {
+			return mergePreview;
+		},
+		get mergeError() {
+			return mergeError;
+		},
+		handleMergeFiles,
+		cancelMerge,
+		confirmMerge,
 		get movementFile() {
 			return movementFile;
 		},
@@ -831,8 +954,17 @@ export function createInventoryController() {
 		get activeView() {
 			return activeView;
 		},
-		set activeView(value: (typeof navItems)[number]['id']) {
-			activeView = value;
+		set activeView(value: (typeof navItems)[number]['id'] | 'products' | 'backup' | 'unmatched') {
+			if (value === 'products' || value === 'backup') {
+				activeView = 'settings';
+				settingsSection = value === 'products' ? 'products' : 'backups';
+			} else if (value === 'unmatched') {
+				activeView = 'inventory';
+				inventorySection = 'unmatched';
+			} else {
+				activeView = value;
+				if (value === 'inventory') inventorySection = 'products';
+			}
 		},
 		get query() {
 			return query;

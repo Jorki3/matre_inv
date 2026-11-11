@@ -14,6 +14,12 @@
 		Excel con solo Clave principal y Cantidad física de los productos contados, incluidos los ceros
 		registrados. Los pendientes no se incluyen en este archivo.
 	</p>
+	{#if app.products.some((p) => p.mergeConflictId)}<p
+			class="text-sm text-amber-700 dark:text-amber-300"
+		>
+			Los productos con conflictos de fusión requieren un nuevo recuento y quedan fuera de esta
+			exportación definitiva.
+		</p>{/if}
 	{#if app.metrics.pending}<p class="text-sm text-red-600">
 			Quedan {app.metrics.pending} productos pendientes: no se incluirán en este archivo.
 		</p>{/if}

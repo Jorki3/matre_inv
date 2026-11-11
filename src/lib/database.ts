@@ -2,6 +2,7 @@ import { validateUnmatchedArticles, type UnmatchedArticle } from './unmatched-ar
 import Dexie, { type Table } from 'dexie';
 import {
 	createSession,
+	createId,
 	createInventoryExport,
 	migrateInventory,
 	type InventoryMovement,
@@ -14,6 +15,7 @@ import {
 export interface StoredInventoryState {
 	id: string;
 	revision?: number;
+	instanceId?: string;
 	session: InventorySession;
 	catalog: Product[];
 	lastSavedAt: string;
@@ -94,7 +96,8 @@ export async function saveInventoryState(
 						previous.catalog,
 						previous.session,
 						previous.movements,
-						previous.unmatchedArticles
+						previous.unmatchedArticles,
+						previous.instanceId
 					),
 					session: previous.session
 				});
@@ -151,4 +154,16 @@ export function readStoredTheme(): ThemeMode {
 	if (typeof window === 'undefined') return 'system';
 	const value = window.localStorage.getItem('matre-theme');
 	return value === 'light' || value === 'dark' ? value : 'system';
+}
+
+export function readWorkInstanceId(): string {
+	try {
+		const stored = window.localStorage.getItem('matre-instance-id');
+		if (stored) return stored;
+		const id = createId('device');
+		window.localStorage.setItem('matre-instance-id', id);
+		return id;
+	} catch {
+		return createId('device');
+	}
 }

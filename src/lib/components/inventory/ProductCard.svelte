@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { focusQuantity } from '$lib/quantity-focus';
 	import type { InventoryController } from './inventory-controller.svelte';
 	import {
 		calculateDifference,
@@ -64,6 +65,12 @@
 				if (!result.error) void app.saveCount(product, operation);
 			}}
 		>
+			{#if product.mergeConflictId}<p
+					role="alert"
+					class="mb-2 text-sm font-semibold text-amber-700 dark:text-amber-300"
+				>
+					Pendiente de revisión por fusión. Registra un nuevo recuento físico para resolverlo.
+				</p>{/if}
 			<div class="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
 				{#if product.category}<span>Categoría: {product.category}</span>{/if}
 				{#if product.unit}<span>Unidad: {product.unit}</span>{/if}
@@ -80,7 +87,8 @@
 					<button
 						type="button"
 						aria-pressed={operation === value}
-						disabled={!app.canCount || (value !== 'recount' && !product.countedAt)}
+						disabled={!app.canCount ||
+							(value !== 'recount' && (!product.countedAt || !!product.mergeConflictId))}
 						class="min-h-11 rounded-xl border px-3 text-sm disabled:opacity-50 aria-pressed:bg-red-600 aria-pressed:text-white"
 						onclick={() => {
 							operation = value as CountOperationType;
@@ -98,6 +106,7 @@
 				<label class="min-w-32 flex-1 text-sm"
 					>Cantidad física<input
 						aria-label="Cantidad física"
+						use:focusQuantity={app.canCount}
 						bind:value={app.countDraft}
 						disabled={!app.canCount}
 						required
@@ -161,6 +170,34 @@
 					</li>
 				{/each}
 			</ul>
+		</details>
+	{/if}
+	{#if app.session.mergeConflicts?.some((c) => c.productId === product.id)}
+		<details class="border-t border-zinc-200 p-3 text-sm dark:border-zinc-800">
+			<summary>Fuentes y conflictos de fusión</summary>
+			{#each (app.session.mergeConflicts ?? []).filter((c) => c.productId === product.id) as conflict (conflict.id)}
+				<div class="mt-2 space-y-1">
+					<p>
+						{conflict.status === 'pending' ? 'Pendiente de revisión' : 'Resuelto por recuento'} · {conflict.reason}
+					</p>
+					<p>
+						Registro local conservado: {conflict.localProduct.countedAt
+							? conflict.localProduct.physical
+							: 'Sin conteo'} · {conflict.localProduct.countedAt ?? ''}
+					</p>
+					{#each conflict.sourceIds as sourceId (sourceId)}{@const source =
+							app.session.mergeSources?.find((item) => item.id === sourceId)}{@const observed =
+							source?.snapshot.session.products.find((p) => p.id === product.id)}
+						<p>
+							{source?.filename ?? sourceId}: {observed?.countedAt
+								? observed.physical
+								: 'Sin conteo'} · {observed?.countedAt ?? ''}
+						</p>{/each}
+					{#if conflict.resolvedAt}<p>
+							Resolución: {conflict.resolvedAt} · Operación {conflict.resolutionOperationId}
+						</p>{/if}
+				</div>
+			{/each}
 		</details>
 	{/if}
 </article>

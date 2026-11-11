@@ -3,11 +3,14 @@ import type { InventorySnapshot } from '$lib/inventory';
 export const navItems = [
 	{ id: 'dashboard', label: 'Inicio' },
 	{ id: 'inventory', label: 'Inventario' },
-	{ id: 'products', label: 'Productos' },
 	{ id: 'movements', label: 'Movimientos' },
-	{ id: 'unmatched', label: 'Artículos no encontrados' },
-	{ id: 'backup', label: 'Respaldo' },
 	{ id: 'settings', label: 'Configuración' }
+] as const;
+export const settingsSections = [
+	{ id: 'general', label: 'General' },
+	{ id: 'products', label: 'Productos' },
+	{ id: 'backups', label: 'Respaldos' },
+	{ id: 'data', label: 'Datos' }
 ] as const;
 export const filters = [
 	{ id: 'all', label: 'Todos' },
@@ -19,7 +22,8 @@ export const filters = [
 export const statusLabels = {
 	pending: 'Pendiente',
 	counted: 'Contado',
-	difference: 'Con diferencia'
+	difference: 'Con diferencia',
+	review: 'Pendiente de revisión'
 };
 
 export type DataAction =

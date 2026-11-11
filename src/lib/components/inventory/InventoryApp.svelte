@@ -5,9 +5,6 @@
 	import AppNavigation from './AppNavigation.svelte';
 	import DashboardView from './DashboardView.svelte';
 	import InventoryView from './InventoryView.svelte';
-	import CatalogView from './CatalogView.svelte';
-	import UnmatchedArticlesView from './UnmatchedArticlesView.svelte';
-	import BackupView from './BackupView.svelte';
 	import SettingsView from './SettingsView.svelte';
 	import MovementsView from './MovementsView.svelte';
 	import DataActionDialog from './DataActionDialog.svelte';
@@ -27,7 +24,7 @@
 <div
 	class="min-h-screen bg-zinc-50 text-zinc-900 transition-colors dark:bg-zinc-950 dark:text-zinc-50"
 >
-	<div class="mx-auto max-w-6xl px-4 pt-4 pb-20 sm:px-6">
+	<div class="mx-auto max-w-6xl px-3 pt-2 pb-20 sm:px-6">
 		<AppHeader {app} />
 		<StorageRecovery {app} />
 		<AppNavigation {app} />
@@ -37,13 +34,6 @@
 		{/if}
 		{#if app.activeView === 'inventory'}
 			<InventoryView {app} />
-		{/if}
-		{#if app.activeView === 'unmatched'}<UnmatchedArticlesView {app} />{/if}
-		{#if app.activeView === 'products'}
-			<CatalogView {app} />
-		{/if}
-		{#if app.activeView === 'backup'}
-			<BackupView {app} />
 		{/if}
 		{#if app.activeView === 'movements'}<MovementsView {app} />{/if}
 		{#if app.activeView === 'settings'}

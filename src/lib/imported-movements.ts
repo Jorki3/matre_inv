@@ -167,6 +167,13 @@ export function reconcileMovements(session: InventorySession): InventorySession 
 			row.status = 'pending';
 			row.reason = 'Producto Pendiente: no se modifica su existencia.';
 		}
+		if (product.mergeConflictId) {
+			for (const row of rows) {
+				row.status = 'review';
+				row.reason = 'Conflicto de fusión pendiente: requiere un nuevo recuento físico.';
+			}
+			return product;
+		}
 		if (!product.countedAt) return product;
 		const resolved = referenceFor(session, product);
 		if (!resolved.reference) {

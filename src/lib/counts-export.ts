@@ -10,7 +10,7 @@ export const COUNTS_EXPORT_LAYOUT = {
 export function createCountsExport(products: Product[]): { Clave: string; Cantidad: number }[] {
 	const keys = new Set<string>();
 	return products
-		.filter((product) => Boolean(product.countedAt))
+		.filter((product) => Boolean(product.countedAt) && !product.mergeConflictId)
 		.map((product) => {
 			if (!product.key.trim() || !Number.isFinite(product.physical) || product.physical < 0)
 				throw new Error(

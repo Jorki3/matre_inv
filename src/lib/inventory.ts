@@ -1,4 +1,10 @@
 import {
+	validateMergeState,
+	type MergeSource,
+	type MergeConflict,
+	type MergeReceipt
+} from './merge-state';
+import {
 	validateMovementState,
 	type ImportedMovement,
 	type PhysicalReference,
@@ -6,7 +12,7 @@ import {
 } from './imported-movements';
 import { validateUnmatchedArticles, type UnmatchedArticle } from './unmatched-articles';
 
-export type ProductStatus = 'pending' | 'counted' | 'difference';
+export type ProductStatus = 'pending' | 'counted' | 'difference' | 'review';
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type InventoryStatus = 'not_started' | 'active' | 'paused' | 'completed';
 export type MovementType = 'sale' | 'purchase' | 'adjustment';
@@ -23,6 +29,7 @@ export interface Product {
 	expected: number;
 	physical: number;
 	countedAt?: string;
+	mergeConflictId?: string;
 	status?: ProductStatus;
 	createdAt: string;
 	source?: string;
@@ -50,6 +57,7 @@ export interface CountOperation {
 	resultingQuantity: number;
 	occurredAt: string;
 	source: string; // Preserve historical origins verbatim; new imported records are generic.
+	instanceId?: string;
 	saleId?: string;
 	saleOccurredAt?: string;
 }
@@ -66,12 +74,17 @@ export interface InventorySession {
 	importedMovements?: ImportedMovement[];
 	movementBaselines?: PhysicalReference[];
 	reconciliationLog?: ReconciliationAudit[];
+	countEpochId?: string;
+	mergeSources?: MergeSource[];
+	mergeConflicts?: MergeConflict[];
+	mergeHistory?: MergeReceipt[];
 }
 
 export interface InventorySnapshot {
 	id: string;
 	version: number;
 	exportedAt: string;
+	exportedBy?: string;
 	session: InventorySession;
 	catalog: Product[];
 	movements: InventoryMovement[];
@@ -110,6 +123,7 @@ export function calculateDifference(actual: number, expected: number): number {
 }
 
 export function getProductStatus(product: Product): ProductStatus {
+	if (product.mergeConflictId) return 'review';
 	if (!product.countedAt) {
 		return 'pending';
 	}
@@ -130,14 +144,16 @@ export function applyPhysicalCount(product: Product, quantity: number): Product 
 
 export function computeMetrics(products: Product[]): ProductMetrics {
 	const total = products.length;
-	const counted = products.filter((product) => Boolean(product.countedAt)).length;
+	const counted = products.filter(
+		(product) => Boolean(product.countedAt) && !product.mergeConflictId
+	).length;
 	const pending = total - counted;
 	const differences = products.filter((product) => {
-		if (!product.countedAt) return false;
+		if (!product.countedAt || product.mergeConflictId) return false;
 		return calculateDifference(product.physical, product.expected) !== 0;
 	}).length;
 	const exact = products.filter((product) => {
-		if (!product.countedAt) return false;
+		if (!product.countedAt || product.mergeConflictId) return false;
 		return calculateDifference(product.physical, product.expected) === 0;
 	}).length;
 
@@ -359,8 +375,8 @@ export function searchProducts(
 	return products.filter((product) => {
 		const matchesFilter = (() => {
 			if (filter === 'all') return true;
-			if (filter === 'pending') return getProductStatus(product) === 'pending';
-			if (filter === 'counted') return Boolean(product.countedAt);
+			if (filter === 'pending') return ['pending', 'review'].includes(getProductStatus(product));
+			if (filter === 'counted') return Boolean(product.countedAt) && !product.mergeConflictId;
 			if (filter === 'difference') return getProductStatus(product) === 'difference';
 			if (filter === 'exact') return getProductStatus(product) === 'counted';
 			return true;
@@ -506,6 +522,7 @@ export function createId(prefix: string): string {
 export function createSession(name = 'Inventario MATRE'): InventorySession {
 	return {
 		id: createId('session'),
+		countEpochId: createId('cycle'),
 		name,
 		status: 'not_started',
 		products: []
@@ -526,6 +543,7 @@ export function resetSessionCounts(
 	return {
 		...previous,
 		id: action === 'new' ? createId('session') : session.id,
+		countEpochId: createId('cycle'),
 		status: 'not_started',
 		products: session.products.map((product) => {
 			const { countedAt: _countedAt, ...catalog } = product;
@@ -578,6 +596,8 @@ export function transitionSession(
 export function previewCount(product: Product, quantity: number, type: CountOperationType): number {
 	if (!Number.isFinite(quantity) || quantity < 0)
 		throw new Error('La cantidad debe ser un número no negativo.');
+	if (type !== 'recount' && product.mergeConflictId)
+		throw new Error('El conflicto requiere un nuevo recuento físico.');
 	if (type !== 'recount' && !product.countedAt)
 		throw new Error('Registra primero un recuento físico.');
 	const result =
@@ -594,31 +614,69 @@ export function countInSession(
 	id: string,
 	quantity: number,
 	type: CountOperationType = 'recount',
-	occurredAt = new Date().toISOString()
+	occurredAt = new Date().toISOString(),
+	instanceId?: string
 ): InventorySession {
 	if (session.status !== 'active') throw new Error('Comienza o reanuda la sesión para contar.');
 	const product = session.products.find((product) => product.id === id);
 	if (!product) throw new Error('Producto no encontrado.');
 	if (!Number.isFinite(Date.parse(occurredAt))) throw new Error('Fecha inválida.');
+	if (type === 'recount' && product.mergeConflictId) {
+		const evidence = (session.operations ?? [])
+			.filter((op) => op.productId === id)
+			.map((op) => op.occurredAt)
+			.concat(
+				(session.importedMovements ?? [])
+					.filter((m) => m.key === product.key)
+					.map((m) => m.occurredAt)
+			);
+		if (
+			evidence.some(
+				(time) =>
+					!/(?:Z|[+-]\d{2}:\d{2})$/.test(time) ||
+					Math.floor(Date.parse(time) / 1000) >= Math.floor(Date.parse(occurredAt) / 1000)
+			)
+		)
+			throw new Error(
+				'Verifica la fecha del dispositivo y realiza el recuento después de las operaciones en conflicto.'
+			);
+	}
 	const result = previewCount(product, quantity, type);
+	const operationId = createId('operation');
 	const updated = {
 		...applyPhysicalCount(product, result),
-		countedAt: type === 'recount' ? occurredAt : product.countedAt
+		countedAt: type === 'recount' ? occurredAt : product.countedAt,
+		...(type === 'recount' ? { mergeConflictId: undefined } : {})
 	};
 	return {
 		...session,
 		products: session.products.map((item) => (item.id === id ? updated : item)),
+		...(type === 'recount' && product.mergeConflictId
+			? {
+					mergeConflicts: (session.mergeConflicts ?? []).map((conflict) =>
+						conflict.productId === id && conflict.status === 'pending'
+							? {
+									...conflict,
+									status: 'resolved' as const,
+									resolvedAt: occurredAt,
+									resolutionOperationId: operationId
+								}
+							: conflict
+					)
+				}
+			: {}),
 		operations: [
 			...(session.operations ?? []),
 			{
-				id: createId('operation'),
+				id: operationId,
 				productId: id,
 				type,
 				previousQuantity: product.countedAt ? product.physical : null,
 				enteredQuantity: quantity,
 				resultingQuantity: result,
 				occurredAt,
-				source: 'manual'
+				source: 'manual',
+				...(instanceId ? { instanceId } : {})
 			}
 		]
 	};
@@ -632,19 +690,24 @@ export function exportRows(products: Product[]) {
 		Existencia: product.expected,
 		'Cantidad física': product.countedAt ? product.physical : null,
 		Diferencia: product.countedAt ? calculateDifference(product.physical, product.expected) : null,
-		Estado: { pending: 'Pendiente', counted: 'Contado', difference: 'Con diferencia' }[
-			getProductStatus(product)
-		]
+		Estado: {
+			pending: 'Pendiente',
+			counted: 'Contado',
+			difference: 'Con diferencia',
+			review: 'Pendiente de revisión'
+		}[getProductStatus(product)]
 	}));
 }
 
 export function getAchievementProgress(products: Product[]): Achievement[] {
 	const total = products.length || 1;
 	const countedUnique = new Set(
-		products.filter((product) => Boolean(product.countedAt)).map((product) => product.id)
+		products
+			.filter((product) => Boolean(product.countedAt) && !product.mergeConflictId)
+			.map((product) => product.id)
 	).size;
 	const perfectCount = products.filter((product) => {
-		if (!product.countedAt) return false;
+		if (!product.countedAt || product.mergeConflictId) return false;
 		return calculateDifference(product.physical, product.expected) === 0;
 	}).length;
 
@@ -726,6 +789,8 @@ export function migrateProducts(input: unknown): Product[] {
 			typeof value.physical !== 'number' ||
 			!Number.isFinite(value.physical) ||
 			value.physical < 0 ||
+			(value.mergeConflictId !== undefined &&
+				(typeof value.mergeConflictId !== 'string' || !value.mergeConflictId)) ||
 			(value.countedAt !== undefined &&
 				(typeof value.countedAt !== 'string' || !Number.isFinite(Date.parse(value.countedAt))))
 		) {
@@ -765,6 +830,7 @@ export function validateOperations(input: unknown): asserts input is CountOperat
 			!['add', 'recount', 'subtract', 'sale'].includes(String(op.type)) ||
 			typeof op.source !== 'string' ||
 			!op.source ||
+			(op.instanceId !== undefined && (typeof op.instanceId !== 'string' || !op.instanceId)) ||
 			(op.previousQuantity !== null &&
 				(typeof op.previousQuantity !== 'number' ||
 					!Number.isFinite(op.previousQuantity) ||
@@ -820,6 +886,10 @@ export function migrateInventory(
 	}
 	if (value.operations !== undefined) validateOperations(value.operations);
 	validateMovementState(value as unknown as InventorySession);
+	validateMergeState(value as unknown as InventorySession, (snapshot) => {
+		const checked = validateBackup(snapshot);
+		if (!checked.valid) throw new Error(`Origen de fusión inválido: ${checked.message}`);
+	});
 	const catalog = migrateProducts(catalogInput);
 	const counted = migrateProducts(value.products);
 	const merged = new Map(catalog.map((product) => [normalizeText(product.key), product]));
@@ -849,13 +919,19 @@ export function validateBackup(input: unknown): {
 } {
 	try {
 		const candidate = record(input);
+		if (
+			candidate.exportedBy !== undefined &&
+			(typeof candidate.exportedBy !== 'string' || !candidate.exportedBy)
+		)
+			throw new Error('Identificador de instancia inválido.');
 		if (typeof candidate.id !== 'string' || !candidate.id.trim())
 			throw new Error('Identificador de respaldo inválido.');
 		if (
 			candidate.version !== 1 &&
 			candidate.version !== 2 &&
 			candidate.version !== 3 &&
-			candidate.version !== 4
+			candidate.version !== 4 &&
+			candidate.version !== 5
 		)
 			throw new Error('La versión del respaldo no es compatible.');
 		if (
@@ -888,7 +964,8 @@ export function createInventoryExport(
 	products: Product[],
 	session: InventorySession,
 	movements: InventoryMovement[] = [],
-	unmatchedArticles: UnmatchedArticle[] = []
+	unmatchedArticles: UnmatchedArticle[] = [],
+	exportedBy?: string
 ): InventorySnapshot {
 	const catalog = products.map((product) => ({
 		...product,
@@ -898,7 +975,12 @@ export function createInventoryExport(
 	return {
 		id: createId('backup'),
 		version:
-			session.importedMovements !== undefined || session.inventoryTimeZone !== undefined ? 4 : 3,
+			exportedBy || session.mergeSources !== undefined || session.countEpochId !== undefined
+				? 5
+				: session.importedMovements !== undefined || session.inventoryTimeZone !== undefined
+					? 4
+					: 3,
+		...(exportedBy ? { exportedBy } : {}),
 		exportedAt: new Date().toISOString(),
 		session: { ...session, products: catalog },
 		catalog,

@@ -6,10 +6,10 @@
 </script>
 
 <div
-	class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
+	class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-900"
 >
 	<div>
-		<h2 class="font-semibold">{app.session.name}</h2>
+		<h2 class="text-sm font-semibold">{app.session.name}</h2>
 		<p class="text-sm" data-testid="session-status">
 			{sessionLabels[app.session.status]} · {app.metrics.counted}/{app.metrics.total} contados
 		</p>
