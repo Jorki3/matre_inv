@@ -29,3 +29,13 @@ You MUST use this tool whenever writing Svelte code before sending it to the use
 
 Generates a Svelte Playground link with the provided code.
 After completing the code, ask the user if they want a playground link. Only call this tool after user confirmation and NEVER if code was written to files in their project.
+
+## Versionado y changelog
+
+Por petición del usuario, cada conjunto de cambios debe incluir una actualización
+de la versión de la app y de `CHANGELOG.md` antes de darse por terminado.
+Mantén sincronizadas la versión de `package.json` y la etiqueta visible de
+`src/lib/components/inventory/AppHeader.svelte`. Usa una versión menor para nuevas
+funcionalidades y una versión de parche para correcciones. Describe solo lo que
+quedó implementado y distingue lo pendiente. Si cambia la app publicada, actualiza
+también el identificador de caché de `static/sw.js` para renovar la PWA.

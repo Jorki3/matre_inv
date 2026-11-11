@@ -19,6 +19,7 @@ import {
 	transitionSession,
 	validateBackup,
 	type InventoryMovement,
+	type CountOperationType,
 	type InventorySession,
 	type InventoryStatus,
 	type Product,
@@ -193,14 +194,22 @@ export function createInventoryController() {
 		}
 	}
 
-	async function saveCount(product: Product): Promise<void> {
+	async function saveCount(
+		product: Product,
+		operation: CountOperationType = 'recount'
+	): Promise<void> {
 		if (!canCount || countDraft === undefined) return;
 		try {
 			const quantity = countDraft;
-			const next = countInSession({ ...session, products }, product.id, quantity);
-			if (await commit(next)) message = `${product.name}: ${quantity} unidades guardadas.`;
+			unmatchedError = '';
+			const next = countInSession({ ...session, products }, product.id, quantity, operation);
+			if (await commit(next)) {
+				message = `${product.name}: ${next.products.find((item) => item.id === product.id)?.physical} unidades guardadas.`;
+				countDraft = undefined;
+			} else unmatchedError = message;
 		} catch (error) {
 			message = (error as Error).message;
+			unmatchedError = message;
 		}
 	}
 

@@ -1,9 +1,30 @@
 <script lang="ts">
 	import type { InventoryController } from './inventory-controller.svelte';
-	import { calculateDifference, getProductStatus, type Product } from '$lib/inventory';
+	import {
+		calculateDifference,
+		getProductStatus,
+		previewCount,
+		type CountOperationType,
+		type Product
+	} from '$lib/inventory';
 	import { statusLabels } from './inventory-ui';
 
 	let { app, product }: { app: InventoryController; product: Product } = $props();
+	let operation = $state<CountOperationType>('recount');
+	const result = $derived.by(() => {
+		if (app.countDraft === undefined) return { quantity: undefined, error: '' };
+		try {
+			return { quantity: previewCount(product, app.countDraft, operation), error: '' };
+		} catch (error) {
+			return { quantity: undefined, error: (error as Error).message };
+		}
+	});
+	const history = $derived(
+		(app.session.operations ?? [])
+			.filter((item) => item.productId === product.id)
+			.slice()
+			.reverse()
+	);
 </script>
 
 <article
@@ -14,7 +35,10 @@
 		class="flex min-h-16 w-full items-center justify-between gap-3 p-3 text-left"
 		aria-expanded={app.selectedProductId === product.id}
 		aria-controls={`count-${product.id}`}
-		onclick={() => app.applySelection(product)}
+		onclick={() => {
+			operation = 'recount';
+			app.applySelection(product);
+		}}
 	>
 		<div class="min-w-0">
 			<h3 class="font-medium">{product.name}</h3>
@@ -37,7 +61,7 @@
 			class="border-t border-zinc-200 p-3 dark:border-zinc-800"
 			onsubmit={(event) => {
 				event.preventDefault();
-				void app.saveCount(product);
+				if (!result.error) void app.saveCount(product, operation);
 			}}
 		>
 			<div class="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
@@ -51,6 +75,25 @@
 					></span
 				>
 			</div>
+			<div class="mb-3 flex gap-2" role="group" aria-label="Operación">
+				{#each [['add', 'Sumar (+)'], ['recount', 'Recontar'], ['subtract', 'Restar (−)']] as [value, label] (value)}
+					<button
+						type="button"
+						aria-pressed={operation === value}
+						disabled={!app.canCount || (value !== 'recount' && !product.countedAt)}
+						class="min-h-11 rounded-xl border px-3 text-sm disabled:opacity-50 aria-pressed:bg-red-600 aria-pressed:text-white"
+						onclick={() => {
+							operation = value as CountOperationType;
+							app.countDraft = undefined;
+						}}>{label}</button
+					>
+				{/each}
+			</div>
+			<p class="mb-2 text-sm">
+				{operation === 'recount'
+					? 'Esto es lo que tengo físicamente ahora.'
+					: 'Movimiento manual sobre la cantidad registrada.'}
+			</p>
 			<div class="flex flex-wrap items-end gap-2">
 				<label class="min-w-32 flex-1 text-sm"
 					>Cantidad física<input
@@ -66,11 +109,33 @@
 					/></label
 				><button
 					type="submit"
-					disabled={!app.canCount || app.countDraft === undefined}
+					disabled={!app.canCount || result.quantity === undefined || !!result.error}
 					class="min-h-11 rounded-xl bg-red-600 px-4 text-sm font-medium text-white disabled:opacity-50"
-					>Guardar cantidad</button
+					>Confirmar operación</button
 				>
 			</div>
+			<p class="mt-2 text-sm" aria-live="polite">
+				Resultado: <strong>{result.quantity ?? '—'}</strong>
+			</p>
+			{#if result.error}<p role="alert" class="mt-2 text-sm text-red-600">{result.error}</p>{/if}
 		</form>
+	{/if}
+	{#if history.length}
+		<details class="border-t border-zinc-200 p-3 text-sm dark:border-zinc-800">
+			<summary>Historial ({history.length})</summary>
+			<ul class="mt-2 space-y-2">
+				{#each history as item (item.id)}
+					<li>
+						{new Date(item.occurredAt).toLocaleString()} · {{
+							add: 'Sumar',
+							recount: 'Recontar',
+							subtract: 'Restar',
+							sale: 'Venta'
+						}[item.type]} · {item.previousQuantity ?? 'Sin conteo'} → {item.resultingQuantity} (cantidad:
+						{item.enteredQuantity}; {item.source})
+					</li>
+				{/each}
+			</ul>
+		</details>
 	{/if}
 </article>

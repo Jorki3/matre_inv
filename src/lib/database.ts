@@ -44,7 +44,10 @@ function copyProduct(product: Product): Product {
 function copySession(session: InventorySession): InventorySession {
 	return {
 		...session,
-		products: session.products.map(copyProduct)
+		products: session.products.map(copyProduct),
+		...(session.operations
+			? { operations: session.operations.map((operation) => ({ ...operation })) }
+			: {})
 	};
 }
 

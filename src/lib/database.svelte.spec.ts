@@ -40,6 +40,7 @@ describe('IndexedDB and mobile counting', () => {
 			if (status !== 'not_started') {
 				expect(restored.catalog[0].physical).toBe(0);
 				expect(restored.catalog[0].countedAt).toBeTruthy();
+				expect(restored.session.operations).toEqual(session.operations);
 			}
 		}
 	});
@@ -140,7 +141,7 @@ describe('IndexedDB and mobile counting', () => {
 	});
 
 	it('edits zero in the expanded card, retains search/filter, and locks paused and finalized capture', async () => {
-		const product = { ...createSeedCatalog()[0], alternateKey: 'ALT-001' };
+		const product = { ...createSeedCatalog()[0], alternateKey: 'ALT001' };
 		await saveInventoryState({
 			id: 'main',
 			session: { ...createSession(), products: [product] },
@@ -151,27 +152,50 @@ describe('IndexedDB and mobile counting', () => {
 		render(App);
 		await page.getByRole('button', { name: 'Inventario', exact: true }).click();
 		await expect.element(page.getByRole('button', { name: 'Comenzar', exact: true })).toBeEnabled();
-		await page.getByTestId('product-card').getByRole('button').click();
+		await page.getByTestId('product-card').getByRole('button').first().click();
 		await expect.element(page.getByRole('spinbutton', { name: 'Cantidad física' })).toBeDisabled();
 		await page.getByRole('button', { name: 'Comenzar', exact: true }).click();
 		await expect.element(page.getByRole('spinbutton', { name: 'Cantidad física' })).toBeEnabled();
-		await page.getByRole('textbox', { name: 'Buscar productos' }).fill('ALT-001');
+		await page.getByRole('textbox', { name: 'Buscar productos' }).fill('ALT001');
 		await page.getByRole('spinbutton', { name: 'Cantidad física' }).fill('0');
-		await page.getByRole('button', { name: 'Guardar cantidad', exact: true }).click();
+		await page.getByRole('button', { name: 'Confirmar operación', exact: true }).click();
 		await expect.element(page.getByRole('status')).toHaveTextContent('0 unidades guardadas');
 		await page.getByRole('button', { name: 'Contados', exact: true }).click();
 		await expect.element(page.getByTestId('product-card')).toHaveTextContent('Con diferencia');
 		await page.getByRole('spinbutton', { name: 'Cantidad física' }).fill(String(product.expected));
-		await page.getByRole('button', { name: 'Guardar cantidad', exact: true }).click();
+		await page.getByRole('button', { name: 'Confirmar operación', exact: true }).click();
 		await expect
 			.element(page.getByRole('status'))
 			.toHaveTextContent(`${product.expected} unidades guardadas`);
 		await expect
 			.element(page.getByRole('textbox', { name: 'Buscar productos' }))
-			.toHaveValue('ALT-001');
+			.toHaveValue('ALT001');
 		await expect
 			.element(page.getByRole('button', { name: 'Contados', exact: true }))
 			.toHaveAttribute('aria-pressed', 'true');
+		await page.getByRole('button', { name: 'Sumar (+)', exact: true }).click();
+		await page.getByRole('spinbutton', { name: 'Cantidad física' }).fill('5');
+		await expect
+			.element(page.getByTestId('product-card'))
+			.toHaveTextContent(`Resultado: ${product.expected + 5}`);
+		expect((await loadInventoryState()).catalog[0].physical).toBe(product.expected);
+		await page.getByRole('button', { name: 'Confirmar operación', exact: true }).click();
+		await expect
+			.element(page.getByRole('status'))
+			.toHaveTextContent(`${product.expected + 5} unidades guardadas`);
+		await page.getByRole('button', { name: 'Restar (−)', exact: true }).click();
+		await page.getByRole('spinbutton', { name: 'Cantidad física' }).fill('999');
+		await expect.element(page.getByRole('alert')).toHaveTextContent('negativo');
+		await expect
+			.element(page.getByRole('button', { name: 'Confirmar operación', exact: true }))
+			.toBeDisabled();
+		await page.getByRole('spinbutton', { name: 'Cantidad física' }).fill('3');
+		await page.getByRole('button', { name: 'Confirmar operación', exact: true }).click();
+		await expect
+			.element(page.getByRole('status'))
+			.toHaveTextContent(`${product.expected + 2} unidades guardadas`);
+		expect((await loadInventoryState()).session.operations).toHaveLength(4);
+		await expect.element(page.getByTestId('product-card')).toHaveTextContent('Historial (4)');
 		await page.getByRole('button', { name: 'Pausar', exact: true }).click();
 		await expect.element(page.getByRole('spinbutton', { name: 'Cantidad física' })).toBeDisabled();
 		expect((await loadInventoryState()).session.status).toBe('paused');
@@ -186,7 +210,7 @@ describe('IndexedDB and mobile counting', () => {
 		await expect.element(page.getByRole('spinbutton', { name: 'Cantidad física' })).toBeDisabled();
 		expect((await loadInventoryState()).session.finishedAt).toBeTruthy();
 		confirmation.mockRestore();
-	});
+	}, 45000);
 });
 
 async function mountCounted(status: 'paused' | 'completed') {

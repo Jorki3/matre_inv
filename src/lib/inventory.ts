@@ -33,6 +33,21 @@ export interface InventoryMovement {
 	notes?: string;
 }
 
+export type CountOperationType = 'add' | 'recount' | 'subtract';
+
+export interface CountOperation {
+	id: string;
+	productId: string;
+	type: CountOperationType | 'sale';
+	previousQuantity: number | null;
+	enteredQuantity: number;
+	resultingQuantity: number;
+	occurredAt: string;
+	source: 'manual' | 'SICAR';
+	saleId?: string;
+	saleOccurredAt?: string;
+}
+
 export interface InventorySession {
 	id: string;
 	name: string;
@@ -40,6 +55,7 @@ export interface InventorySession {
 	finishedAt?: string;
 	status: InventoryStatus;
 	products: Product[];
+	operations?: CountOperation[];
 }
 
 export interface InventorySnapshot {
@@ -235,11 +251,7 @@ function wordMatchesToken(word: string, tokens: string[]): boolean {
 		if (token === word) return true;
 		if (token.length >= 2 && word.length >= 2 && (token === `${word}s` || word === `${token}s`))
 			return true;
-		if (
-			token.length >= 4 &&
-			word.length >= 4 &&
-			(token.startsWith(word) || word.startsWith(token))
-		)
+		if (token.length >= 4 && word.length >= 4 && (token.startsWith(word) || word.startsWith(token)))
 			return true;
 		return false;
 	});
@@ -553,19 +565,52 @@ export function transitionSession(
 	};
 }
 
+export function previewCount(product: Product, quantity: number, type: CountOperationType): number {
+	if (!Number.isFinite(quantity) || quantity < 0)
+		throw new Error('La cantidad debe ser un número no negativo.');
+	if (type !== 'recount' && !product.countedAt)
+		throw new Error('Registra primero un recuento físico.');
+	const result =
+		type === 'recount' ? quantity : product.physical + (type === 'add' ? quantity : -quantity);
+	if (!Number.isFinite(result) || result < 0)
+		throw new Error(
+			'El resultado sería negativo o inválido. Revisa la cantidad antes de confirmar.'
+		);
+	return result;
+}
+
 export function countInSession(
 	session: InventorySession,
 	id: string,
-	quantity: number
+	quantity: number,
+	type: CountOperationType = 'recount',
+	occurredAt = new Date().toISOString()
 ): InventorySession {
 	if (session.status !== 'active') throw new Error('Comienza o reanuda la sesión para contar.');
-	if (!session.products.some((product) => product.id === id))
-		throw new Error('Producto no encontrado.');
+	const product = session.products.find((product) => product.id === id);
+	if (!product) throw new Error('Producto no encontrado.');
+	if (!Number.isFinite(Date.parse(occurredAt))) throw new Error('Fecha inválida.');
+	const result = previewCount(product, quantity, type);
+	const updated = {
+		...applyPhysicalCount(product, result),
+		countedAt: type === 'recount' ? occurredAt : product.countedAt
+	};
 	return {
 		...session,
-		products: session.products.map((product) =>
-			product.id === id ? applyPhysicalCount(product, quantity) : product
-		)
+		products: session.products.map((item) => (item.id === id ? updated : item)),
+		operations: [
+			...(session.operations ?? []),
+			{
+				id: createId('operation'),
+				productId: id,
+				type,
+				previousQuantity: product.countedAt ? product.physical : null,
+				enteredQuantity: quantity,
+				resultingQuantity: result,
+				occurredAt,
+				source: 'manual'
+			}
+		]
 	};
 }
 
@@ -574,7 +619,7 @@ export function exportRows(products: Product[]) {
 		Clave: product.key,
 		'Clave alterna': product.alternateKey ?? product.barcode ?? '',
 		Descripción: product.name,
-		'Existencia': product.expected,
+		Existencia: product.expected,
 		'Cantidad física': product.countedAt ? product.physical : null,
 		Diferencia: product.countedAt ? calculateDifference(product.physical, product.expected) : null,
 		Estado: { pending: 'Pendiente', counted: 'Contado', difference: 'Con diferencia' }[
@@ -695,6 +740,59 @@ export function migrateProducts(input: unknown): Product[] {
 	});
 }
 
+export function validateOperations(input: unknown): asserts input is CountOperation[] {
+	if (!Array.isArray(input)) throw new Error('Historial inválido.');
+	const ids = new Set<string>();
+	const sales = new Set<string>();
+	for (const entry of input) {
+		const op = record(entry);
+		if (
+			typeof op.id !== 'string' ||
+			!op.id ||
+			ids.has(op.id) ||
+			typeof op.productId !== 'string' ||
+			!op.productId ||
+			!['add', 'recount', 'subtract', 'sale'].includes(String(op.type)) ||
+			!['manual', 'SICAR'].includes(String(op.source)) ||
+			(op.previousQuantity !== null &&
+				(typeof op.previousQuantity !== 'number' ||
+					!Number.isFinite(op.previousQuantity) ||
+					op.previousQuantity < 0)) ||
+			typeof op.enteredQuantity !== 'number' ||
+			!Number.isFinite(op.enteredQuantity) ||
+			op.enteredQuantity < 0 ||
+			typeof op.resultingQuantity !== 'number' ||
+			!Number.isFinite(op.resultingQuantity) ||
+			op.resultingQuantity < 0 ||
+			typeof op.occurredAt !== 'string' ||
+			!Number.isFinite(Date.parse(op.occurredAt)) ||
+			(op.type === 'sale' &&
+				(op.source !== 'SICAR' ||
+					typeof op.saleId !== 'string' ||
+					!op.saleId ||
+					sales.has(op.saleId)))
+		)
+			throw new Error('Historial inválido.');
+		const previous = op.previousQuantity as number | null;
+		const entered = op.enteredQuantity as number;
+		const expected =
+			op.type === 'recount'
+				? entered
+				: previous === null
+					? NaN
+					: previous + (op.type === 'add' ? entered : -entered);
+		if (
+			expected !== op.resultingQuantity ||
+			(op.type !== 'sale' && op.source !== 'manual') ||
+			(op.type === 'sale' &&
+				(typeof op.saleOccurredAt !== 'string' || !Number.isFinite(Date.parse(op.saleOccurredAt))))
+		)
+			throw new Error('Historial inconsistente.');
+		ids.add(op.id);
+		if (op.type === 'sale') sales.add(op.saleId as string);
+	}
+}
+
 export function migrateInventory(
 	sessionInput: unknown,
 	catalogInput: unknown
@@ -713,6 +811,7 @@ export function migrateInventory(
 		)
 			throw new Error('Fecha de sesión inválida.');
 	}
+	if (value.operations !== undefined) validateOperations(value.operations);
 	const catalog = migrateProducts(catalogInput);
 	const counted = migrateProducts(value.products);
 	const merged = new Map(catalog.map((product) => [normalizeText(product.key), product]));

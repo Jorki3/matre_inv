@@ -45,6 +45,9 @@
 	{@render candidates?.()}
 
 	<QuantityStepper bind:quantity />
+	<p class="text-sm" aria-live="polite">
+		Recontar: esto es lo que tengo físicamente ahora. Resultado: <strong>{quantity ?? '—'}</strong>
+	</p>
 
 	<button
 		type="button"

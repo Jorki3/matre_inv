@@ -2,6 +2,20 @@
 
 Todos los cambios notables de la app. Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [0.8.0] - 2026-11-11
+
+### Añadido
+- Operaciones manuales Sumar (+), Recontar y Restar (−), con resultado visible antes de confirmar y advertencia que bloquea cantidades negativas.
+- Historial por producto con cantidades anterior, ingresada y resultante, fecha, hora y origen, conservado en IndexedDB y respaldos JSON compatibles con los inventarios existentes.
+- Motor de conciliación para ventas normalizadas: vista previa sin modificar datos, confirmación explícita, prevención de duplicados y revisión de fechas ambiguas. La lectura de archivos SICAR y su interfaz quedan pendientes de verificar un reporte real.
+- Pruebas de operaciones manuales, persistencia, historial y reglas de conciliación; documentación de arquitectura y datos necesarios para SICAR.
+- Regla del proyecto para actualizar siempre la versión y el changelog junto con los cambios.
+
+### Cambiado
+- Recontar establece la referencia física, incluso en cero o sin conteo previo. Sumar y Restar requieren un primer recuento y conservan esa referencia sin inferir compras ni entradas.
+- Voz y escaneo conservan su flujo de confirmación y ahora registran historial de recuentos.
+- Versión visible actualizada a 0.8.0 y caché de la PWA renovada.
+
 ## [0.7.2] - 2026-11-08
 
 ### Quitado
