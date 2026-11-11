@@ -132,7 +132,32 @@
 							subtract: 'Restar',
 							sale: 'Venta'
 						}[item.type]} · {item.previousQuantity ?? 'Sin conteo'} → {item.resultingQuantity} (cantidad:
-						{item.enteredQuantity}; {item.source})
+						{item.enteredQuantity}; {item.source === 'manual' ? 'manual' : 'importación'})
+					</li>
+				{/each}
+			</ul>
+		</details>
+	{/if}
+	{#if app.session.importedMovements?.some((m) => m.key === product.key)}
+		<details class="border-t border-zinc-200 p-3 text-sm dark:border-zinc-800">
+			<summary>Movimientos importados e historial de conciliación</summary>
+			<ul class="mt-2 space-y-2">
+				{#each (app.session.importedMovements ?? [])
+					.filter((m) => m.key === product.key)
+					.slice()
+					.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt)) as movement (movement.id)}
+					<li>
+						{movement.date} · {movement.time} ({movement.timeZone}) · {movement.type === 'sale'
+							? 'Venta'
+							: 'Nota de crédito'} · Folio {movement.folio} · Cantidad: {movement.quantity}. {movement.reason}
+					</li>
+				{/each}
+			</ul>
+			<ul class="mt-3 space-y-2">
+				{#each (app.session.reconciliationLog ?? []).filter((entry) => entry.productId === product.id) as entry (entry.id)}
+					<li>
+						Conciliación {entry.at}: {entry.previousQuantity} → {entry.resultingQuantity}. {entry
+							.outcomes.length} movimientos evaluados.
 					</li>
 				{/each}
 			</ul>

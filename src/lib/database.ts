@@ -13,6 +13,7 @@ import {
 
 export interface StoredInventoryState {
 	id: string;
+	revision?: number;
 	session: InventorySession;
 	catalog: Product[];
 	lastSavedAt: string;
@@ -74,10 +75,17 @@ export async function loadInventoryState(): Promise<StoredInventoryState> {
 
 export async function saveInventoryState(
 	payload: StoredInventoryState,
-	archiveCurrent = false
-): Promise<void> {
-	if (typeof window === 'undefined') return;
-	await db.transaction('rw', db.state, db.backups, async () => {
+	archiveCurrent = false,
+	expectedRevision?: number
+): Promise<number> {
+	if (typeof window === 'undefined') return 0;
+	return await db.transaction('rw', db.state, db.backups, async () => {
+		const persisted = await db.state.get(payload.id ?? 'main');
+		if (expectedRevision !== undefined && (persisted?.revision ?? 0) !== expectedRevision)
+			throw new Error(
+				'El inventario cambió en otra pestaña. Recarga y revisa de nuevo antes de guardar.'
+			);
+		const revision = (persisted?.revision ?? 0) + 1;
 		if (archiveCurrent) {
 			const previous = await db.state.get('main');
 			if (previous)
@@ -94,6 +102,7 @@ export async function saveInventoryState(
 		const current = await db.state.get(payload.id ?? 'main');
 		await db.state.put({
 			...payload,
+			revision,
 			unmatchedArticles: validateUnmatchedArticles(
 				payload.unmatchedArticles ?? current?.unmatchedArticles
 			),
@@ -102,6 +111,7 @@ export async function saveInventoryState(
 			catalog: payload.catalog.map(copyProduct),
 			lastSavedAt: new Date().toISOString()
 		});
+		return revision;
 	});
 }
 

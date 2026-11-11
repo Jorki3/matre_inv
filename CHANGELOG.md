@@ -2,6 +2,22 @@
 
 Todos los cambios notables de la app. Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [0.9.0] - 2026-11-11
+
+### Añadido
+- Sección Movimientos con importación independiente de ventas y notas de crédito desde archivos .xlsx, validación por fila y vista previa obligatoria antes de confirmar.
+- Identificación por tipo, folio y clave principal exacta; conservación de ceros iniciales, detección de duplicados y conflictos sin sobrescribir los registros originales.
+- Conciliación cronológica desde el último recuento físico, respetando ajustes manuales y movimientos atrasados. Productos Pendientes conservan sus movimientos sin modificar sus existencias.
+- Confirmación explícita del reingreso físico de devoluciones, consulta de pendientes y auditoría de conciliaciones por producto.
+- Zona horaria confirmada para el inventario, conversión de fechas y horas de Excel a instantes ISO y revisión de horas ambiguas o inexistentes.
+- Respaldo JSON v4 para los nuevos datos, manteniendo lectura de versiones 1–3 y los timestamps históricos originales.
+- Protección contra escrituras desde pestañas desactualizadas y pruebas de conciliación, archivos Excel, zonas horarias y persistencia atómica.
+
+### Cambiado
+- El motor preliminar de ventas se sustituye por reglas genéricas de movimientos, sin referencias a proveedores en el módulo nuevo.
+- Las tablas existentes de IndexedDB permanecen en versión 1; los nuevos datos son campos opcionales de la sesión. No se recalcula ni se reinicializa el inventario al cargarlo.
+- Versión de la app actualizada a 0.9.0 y caché PWA renovada a v15.
+
 ## [0.8.0] - 2026-11-11
 
 ### Añadido

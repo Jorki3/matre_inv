@@ -1,3 +1,16 @@
+import { readMovementFile } from '$lib/movement-import';
+import {
+	auditReconciliation,
+	candidateForMovement,
+	confirmMovementImport,
+	movementId,
+	previewMovementImport,
+	reconcileMovements,
+	type ImportedMovementType,
+	type MovementCandidate,
+	type ReturnDecision
+} from '$lib/imported-movements';
+import { validateTimeZone } from '$lib/movement-time';
 import { asset } from '$app/paths';
 import { onMount } from 'svelte';
 import { SvelteDate, SvelteMap } from 'svelte/reactivity';
@@ -68,6 +81,21 @@ export function createInventoryController() {
 	let hydrated = $state(false);
 	let loadFailed = $state(false);
 	let busy = $state(false);
+	let storageRevision = 0;
+	let movementFile = $state('');
+	let movementRows = $state<MovementCandidate[]>([]);
+	let movementBlankRows = $state<number[]>([]);
+	let movementDecisions = $state<Record<string, ReturnDecision>>({});
+	let movementReviewIds = $state<string[]>([]);
+	let movementError = $state('');
+	const movementPreview = $derived(
+		previewMovementImport(
+			{ ...session, products },
+			movementRows,
+			movementDecisions,
+			movementReviewIds
+		)
+	);
 	let lastBackupAt = $state<string | null>(null);
 	let movements = $state<InventoryMovement[]>([]);
 	let unmatchedArticles = $state<UnmatchedArticle[]>([]);
@@ -150,7 +178,7 @@ export function createInventoryController() {
 		if (!hydrated || busy) return false;
 		busy = true;
 		try {
-			await saveInventoryState(
+			const savedRevision = await saveInventoryState(
 				{
 					id: 'main',
 					session: $state.snapshot(next),
@@ -161,8 +189,10 @@ export function createInventoryController() {
 					movements: $state.snapshot(nextMovements),
 					unmatchedArticles: $state.snapshot(nextUnmatched)
 				},
-				archive
+				archive,
+				storageRevision
 			);
+			storageRevision = savedRevision;
 			session = next;
 			products = next.products;
 			lastBackupAt = backupAt;
@@ -202,7 +232,22 @@ export function createInventoryController() {
 		try {
 			const quantity = countDraft;
 			unmatchedError = '';
-			const next = countInSession({ ...session, products }, product.id, quantity, operation);
+			const counted = countInSession({ ...session, products }, product.id, quantity, operation);
+			const next = session.importedMovements?.length
+				? auditReconciliation(session, reconcileMovements(counted))
+				: counted;
+			if (
+				operation !== 'recount' &&
+				next.importedMovements?.some(
+					(m) =>
+						m.key === product.key &&
+						m.status === 'review' &&
+						session.importedMovements?.find((old) => old.id === m.id)?.status === 'applied'
+				)
+			)
+				throw new Error(
+					'La operación coincide con un movimiento aplicado o produce una cronología ambigua. Revisa Movimientos antes de confirmar; no se guardó el cambio.'
+				);
 			if (await commit(next)) {
 				message = `${product.name}: ${next.products.find((item) => item.id === product.id)?.physical} unidades guardadas.`;
 				countDraft = undefined;
@@ -375,17 +420,16 @@ export function createInventoryController() {
 		if (!dataAction || !acknowledged || busy) return;
 		const action = dataAction;
 		try {
-			const next =
+			const base =
 				action.kind === 'restore'
 					? action.snapshot.session
 					: resetSessionCounts({ ...session, products }, action.kind);
+			const next =
+				action.kind !== 'restore' && base.importedMovements
+					? auditReconciliation(session, reconcileMovements(base))
+					: base;
 			const backupAt = action.kind === 'restore' ? action.snapshot.exportedAt : lastBackupAt;
-			const nextMovements =
-				action.kind === 'restore'
-					? action.snapshot.movements
-					: action.kind === 'new'
-						? []
-						: movements;
+			const nextMovements = action.kind === 'restore' ? action.snapshot.movements : movements;
 			const nextUnmatched =
 				action.kind === 'restore' ? (action.snapshot.unmatchedArticles ?? []) : unmatchedArticles;
 			if (await commit(next, true, backupAt, nextMovements, nextUnmatched)) {
@@ -399,6 +443,7 @@ export function createInventoryController() {
 				importRows = [];
 				importFile = '';
 				headers = [];
+				cancelMovementImport();
 				message =
 					action.kind === 'restore'
 						? 'Respaldo restaurado con sus conteos y estado de sesión.'
@@ -457,6 +502,7 @@ export function createInventoryController() {
 				theme = readStoredTheme();
 				applyTheme(theme);
 				const saved = await loadInventoryState();
+				storageRevision = saved.revision ?? 0;
 				products = saved.catalog;
 				session = saved.session;
 				lastBackupAt = saved.lastBackupAt ?? null;
@@ -480,6 +526,90 @@ export function createInventoryController() {
 			backupFilename(),
 			container
 		);
+	}
+
+	async function configureInventoryTimeZone(value: string): Promise<void> {
+		if (!hydrated || busy || session.status === 'completed') return;
+		try {
+			validateTimeZone(value);
+			if (session.importedMovements?.length && value !== session.inventoryTimeZone)
+				throw new Error('La zona está vinculada a movimientos importados y no se puede cambiar.');
+			if (await commit({ ...session, products, inventoryTimeZone: value }, true)) {
+				cancelMovementImport();
+				message = `Zona del inventario: ${value}. Las fechas históricas se conservaron.`;
+			}
+		} catch (error) {
+			movementError = (error as Error).message;
+		}
+	}
+
+	async function handleMovementImport(event: Event, type: ImportedMovementType): Promise<void> {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file || !canCount) return;
+		cancelMovementImport();
+		try {
+			if (!session.inventoryTimeZone)
+				throw new Error('Confirma primero la zona horaria del inventario.');
+			const result = readMovementFile(
+				await file.arrayBuffer(),
+				file.name,
+				type,
+				session.inventoryTimeZone
+			);
+			movementFile = file.name;
+			movementRows = result.rows;
+			movementBlankRows = result.blankRows;
+			if (!result.rows.length) movementError = 'No hay movimientos en el archivo.';
+			message = 'Revisa la vista previa. No se han modificado existencias.';
+		} catch (error) {
+			movementError = (error as Error).message;
+		}
+	}
+
+	function cancelMovementImport(): void {
+		if (busy) return;
+		movementFile = '';
+		movementRows = [];
+		movementBlankRows = [];
+		movementDecisions = {};
+		movementReviewIds = [];
+		movementError = '';
+	}
+
+	function setMovementDecision(id: string, value: ReturnDecision): void {
+		movementDecisions = { ...movementDecisions, [id]: value };
+	}
+
+	function reviewImportedMovement(id: string): void {
+		if (!canCount) return;
+		const record = session.importedMovements?.find((m) => m.id === id);
+		if (!record) return;
+		cancelMovementImport();
+		movementFile = `Revisión de folio ${record.folio}`;
+		movementRows = [candidateForMovement(record)];
+		movementReviewIds = [id];
+		movementDecisions = { [id]: record.returnDecision };
+	}
+
+	async function confirmImportedMovements(): Promise<void> {
+		if (!canCount || !movementFile || !movementRows.length || movementPreview.errors.length) return;
+		try {
+			const next = confirmMovementImport(
+				{ ...session, products },
+				movementRows,
+				movementDecisions,
+				movementReviewIds
+			);
+			if (await commit(next, true)) {
+				cancelMovementImport();
+				message =
+					'Movimientos guardados y conciliación registrada. Los casos pendientes conservan su motivo de revisión.';
+			} else movementError = message;
+		} catch (error) {
+			movementError = (error as Error).message;
+		}
 	}
 
 	function setMappingColumn(field: keyof ColumnMapping, column: string): void {
@@ -572,6 +702,28 @@ export function createInventoryController() {
 	}
 
 	return {
+		get movementFile() {
+			return movementFile;
+		},
+		get movementBlankRows() {
+			return movementBlankRows;
+		},
+		get movementPreview() {
+			return movementPreview;
+		},
+		get movementError() {
+			return movementError;
+		},
+		get movementDecisions() {
+			return movementDecisions;
+		},
+		movementId,
+		configureInventoryTimeZone,
+		handleMovementImport,
+		cancelMovementImport,
+		setMovementDecision,
+		reviewImportedMovement,
+		confirmImportedMovements,
 		get unmatchedMetrics() {
 			return unmatchedMetrics;
 		},

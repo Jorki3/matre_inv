@@ -1,3 +1,9 @@
+import {
+	validateMovementState,
+	type ImportedMovement,
+	type PhysicalReference,
+	type ReconciliationAudit
+} from './imported-movements';
 import { validateUnmatchedArticles, type UnmatchedArticle } from './unmatched-articles';
 
 export type ProductStatus = 'pending' | 'counted' | 'difference';
@@ -43,7 +49,7 @@ export interface CountOperation {
 	enteredQuantity: number;
 	resultingQuantity: number;
 	occurredAt: string;
-	source: 'manual' | 'SICAR';
+	source: string; // Preserve historical origins verbatim; new imported records are generic.
 	saleId?: string;
 	saleOccurredAt?: string;
 }
@@ -56,6 +62,10 @@ export interface InventorySession {
 	status: InventoryStatus;
 	products: Product[];
 	operations?: CountOperation[];
+	inventoryTimeZone?: string;
+	importedMovements?: ImportedMovement[];
+	movementBaselines?: PhysicalReference[];
+	reconciliationLog?: ReconciliationAudit[];
 }
 
 export interface InventorySnapshot {
@@ -753,7 +763,8 @@ export function validateOperations(input: unknown): asserts input is CountOperat
 			typeof op.productId !== 'string' ||
 			!op.productId ||
 			!['add', 'recount', 'subtract', 'sale'].includes(String(op.type)) ||
-			!['manual', 'SICAR'].includes(String(op.source)) ||
+			typeof op.source !== 'string' ||
+			!op.source ||
 			(op.previousQuantity !== null &&
 				(typeof op.previousQuantity !== 'number' ||
 					!Number.isFinite(op.previousQuantity) ||
@@ -766,11 +777,7 @@ export function validateOperations(input: unknown): asserts input is CountOperat
 			op.resultingQuantity < 0 ||
 			typeof op.occurredAt !== 'string' ||
 			!Number.isFinite(Date.parse(op.occurredAt)) ||
-			(op.type === 'sale' &&
-				(op.source !== 'SICAR' ||
-					typeof op.saleId !== 'string' ||
-					!op.saleId ||
-					sales.has(op.saleId)))
+			(op.type === 'sale' && (typeof op.saleId !== 'string' || !op.saleId || sales.has(op.saleId)))
 		)
 			throw new Error('Historial inválido.');
 		const previous = op.previousQuantity as number | null;
@@ -812,6 +819,7 @@ export function migrateInventory(
 			throw new Error('Fecha de sesión inválida.');
 	}
 	if (value.operations !== undefined) validateOperations(value.operations);
+	validateMovementState(value as unknown as InventorySession);
 	const catalog = migrateProducts(catalogInput);
 	const counted = migrateProducts(value.products);
 	const merged = new Map(catalog.map((product) => [normalizeText(product.key), product]));
@@ -843,14 +851,19 @@ export function validateBackup(input: unknown): {
 		const candidate = record(input);
 		if (typeof candidate.id !== 'string' || !candidate.id.trim())
 			throw new Error('Identificador de respaldo inválido.');
-		if (candidate.version !== 1 && candidate.version !== 2 && candidate.version !== 3)
+		if (
+			candidate.version !== 1 &&
+			candidate.version !== 2 &&
+			candidate.version !== 3 &&
+			candidate.version !== 4
+		)
 			throw new Error('La versión del respaldo no es compatible.');
 		if (
 			typeof candidate.exportedAt !== 'string' ||
 			!Number.isFinite(Date.parse(candidate.exportedAt))
 		)
 			throw new Error('Fecha del respaldo inválida.');
-		if (candidate.version === 3 && !Array.isArray(candidate.unmatchedArticles))
+		if (Number(candidate.version) >= 3 && !Array.isArray(candidate.unmatchedArticles))
 			throw new Error('El respaldo no contiene la lista de hallazgos.');
 		const unmatchedArticles = validateUnmatchedArticles(candidate.unmatchedArticles);
 		const migrated = migrateInventory(candidate.session, candidate.catalog);
@@ -884,7 +897,8 @@ export function createInventoryExport(
 	}));
 	return {
 		id: createId('backup'),
-		version: 3,
+		version:
+			session.importedMovements !== undefined || session.inventoryTimeZone !== undefined ? 4 : 3,
 		exportedAt: new Date().toISOString(),
 		session: { ...session, products: catalog },
 		catalog,

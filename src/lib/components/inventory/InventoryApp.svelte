@@ -9,6 +9,7 @@
 	import UnmatchedArticlesView from './UnmatchedArticlesView.svelte';
 	import BackupView from './BackupView.svelte';
 	import SettingsView from './SettingsView.svelte';
+	import MovementsView from './MovementsView.svelte';
 	import DataActionDialog from './DataActionDialog.svelte';
 	import StorageRecovery from './StorageRecovery.svelte';
 	import AppStatus from './AppStatus.svelte';
@@ -44,6 +45,7 @@
 		{#if app.activeView === 'backup'}
 			<BackupView {app} />
 		{/if}
+		{#if app.activeView === 'movements'}<MovementsView {app} />{/if}
 		{#if app.activeView === 'settings'}
 			<SettingsView {app} />
 		{/if}

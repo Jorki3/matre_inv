@@ -6,7 +6,6 @@ import {
 	resetSessionCounts,
 	type InventorySession
 } from './inventory';
-import { previewSicarSales, confirmSicarSales, type SicarSale } from './sicar-reconciliation';
 
 const time = '2026-11-11T11:00:00Z';
 function session(): InventorySession {
@@ -27,13 +26,6 @@ function session(): InventorySession {
 		]
 	};
 }
-const sale = (id: string, occurredAt = '2026-11-11T12:00:00Z', quantity = 1): SicarSale => ({
-	id,
-	key: 'SIL',
-	quantity,
-	occurredAt
-});
-
 describe('operaciones manuales e historial', () => {
 	it.each([
 		['add', 5, 15],
@@ -86,51 +78,5 @@ describe('operaciones manuales e historial', () => {
 		expect(validateBackup({ ...backup, session: { ...initial, operations: [{}] } }).valid).toBe(
 			false
 		);
-	});
-});
-
-describe('conciliación SICAR sin suponer formato de archivo', () => {
-	it('no descuenta una venta anterior al recuento de cero', () => {
-		const initial = countInSession(session(), 'p', 0, 'recount', time);
-		expect(previewSicarSales(initial, [sale('a', '2026-11-11T10:00:00Z')])[0].status).toBe(
-			'included'
-		);
-		expect(initial.products[0].physical).toBe(0);
-	});
-	it('vista previa no muta, confirma posteriores y evita reimportación incluso tras exportar', () => {
-		const initial = session();
-		const sales = [sale('a')];
-		expect(previewSicarSales(initial, sales)[0].resultingQuantity).toBe(9);
-		expect(initial.products[0].physical).toBe(10);
-		const next = confirmSicarSales(initial, sales, ['a']);
-		expect(next.products[0].physical).toBe(9);
-		const restored = validateBackup(
-			JSON.parse(JSON.stringify(createInventoryExport(next.products, next)))
-		).value!;
-		expect(previewSicarSales(restored.session, sales)[0].status).toBe('duplicate');
-		expect(() => confirmSicarSales(restored.session, sales, ['a'])).toThrow();
-		expect(restored.session.operations?.[0].saleOccurredAt).toBe(sales[0].occurredAt);
-	});
-	it.each(['2026-11-11', '2026-11-11T12:00:00', time])(
-		'fecha ambigua %s queda pendiente',
-		(date) => {
-			expect(previewSicarSales(session(), [sale('a', date)])[0].status).toBe('review');
-		}
-	);
-	it('el nuevo recuento cambia la referencia', () => {
-		const next = countInSession(session(), 'p', 12, 'recount', '2026-11-11T13:00:00Z');
-		expect(previewSicarSales(next, [sale('a')])[0].status).toBe('included');
-	});
-	it('revisa duplicados internos y descuentos acumulados negativos', () => {
-		expect(previewSicarSales(session(), [sale('a'), sale('a')]).map((p) => p.status)).toEqual([
-			'review',
-			'review'
-		]);
-		expect(
-			previewSicarSales(session(), [sale('a', undefined, 8), sale('b', undefined, 8)]).map(
-				(p) => p.status
-			)
-		).toEqual(['eligible', 'review']);
-		expect(() => confirmSicarSales(session(), [sale('a', undefined, 11)], ['a'])).toThrow();
 	});
 });
